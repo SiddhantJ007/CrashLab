@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CrashLab</title>
+  <link rel="stylesheet" href="/static/styles.css?v={{ asset_version }}"/>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">Target-aware evaluation for API-accessible AI workflows</div>
+      <h1>CrashLab</h1>
+      <p class="sub">Add a configured Flowise, Langflow, or custom API workflow, preview the active suite, generate a reviewed test plan, and compare only the runs CrashLab can actually trust.</p>
+    </div>
+    <div class="hero-card">
+      <div class="small">Current platform focus</div>
+      <div class="metric"><span id="target-count">{{ targets|length }}</span> target types</div>
+      <div class="small muted">Flowise • Langflow • Custom API onboarding</div>
+    </div>
+  </header>
+
+  <section class="card summary-banner" id="run-banner">
+    <div class="row">
+      <div>
+        <h3 id="banner-title">Run trust summary</h3>
+        <div class="small muted" id="banner-text">No run selected yet.</div>
+      </div>
+      <div class="banner-actions" id="banner-actions">
+        <button class="ghost" id="toggle-target-form" onclick="toggleTargetForm()">Add Target</button>
+        <a class="ghost button-link disabled-link" id="export-json-link" href="#" aria-disabled="true">Download JSON</a>
+        <a class="ghost button-link disabled-link" id="export-csv-link" href="#" aria-disabled="true">Download CSV</a>
+        <button class="ghost" id="copy-md-button" onclick="copyMarkdownSummary()" disabled>Copy Markdown</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card hidden" id="target-form-card">
+    <div class="row">
+      <div>
+        <h3>Add or Configure Target</h3>
+        <div class="small muted">Create a configured Flowise, Langflow, or compatible custom API target without editing repo files.</div>
+      </div>
+      <button class="ghost" onclick="toggleTargetForm()">Close</button>
+    </div>
+    <form id="target-form" class="target-form">
+      <div class="form-grid">
+        <label><span>Target name</span><input name="name" required placeholder="Team Workflow Orchestrator"/></label>
+        <label><span>Platform</span><select name="platform" required><option>Flowise</option><option>Langflow</option><option>Custom API</option></select></label>
+        <label><span>Base URL</span><input name="base_url" required placeholder="https://cloud.flowiseai.com"/></label>
+        <label><span>Flow ID or endpoint path</span><input name="flow_or_endpoint" required placeholder="1770abba-... or api/v1/run/my-flow"/></label>
+        <label><span>API key env var</span><input name="api_key_env" placeholder="FLOWISE_API_KEY"/></label>
+        <label><span>Target family</span><select name="family" required><option value="agent_orchestrator">agent_orchestrator</option><option value="rag_assistant">rag_assistant</option><option value="analysis_pipeline">analysis_pipeline</option><option value="general_chatbot">general_chatbot</option><option value="custom_or_unknown">custom_or_unknown</option></select></label>
+        <label><span>Expected output style</span><select name="expected_output_style" required><option value="text">text</option><option value="json">json</option><option value="structured_answer">structured_answer</option></select></label>
+        <label><span>Timeout seconds</span><input name="timeout_seconds" type="number" min="5" value="60"/></label>
+        <label><span>Side effects</span><select name="side_effects"><option value="unknown">unknown</option><option value="no">no</option><option value="yes">yes</option></select></label>
+        <label class="checkbox-row"><input name="enabled" type="checkbox" checked/><span>Enabled</span></label>
+        <label class="span-2"><span>Description / purpose</span><textarea name="description" rows="3" placeholder="Describe what this workflow is supposed to do, what input it expects, and what output it returns."></textarea></label>
+        <label><span>Output component (optional)</span><input name="output_component" placeholder="ChatOutput-abc123"/></label>
+        <label><span>Preferred output index (optional)</span><input name="preferred_output_index" type="number" min="0"/></label>
+        <label><span>Preferred nested index (optional)</span><input name="preferred_nested_index" type="number" min="0"/></label>
+        <label><span>Preferred result key (optional)</span><input name="preferred_result_key" placeholder="message.text"/></label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost" onclick="suggestTargetPlan()">Suggest Suite</button>
+        <button type="submit">Save target</button>
+      </div>
+      <div class="small muted" id="target-form-feedback">Manual family selection is always supported. Suggested suites are optional.</div>
+    </form>
+  </section>
+
+  <section class="card hidden" id="suite-preview-card">
+    <div class="row">
+      <div>
+        <h3 id="suite-preview-title">Suite preview</h3>
+        <div class="small muted" id="suite-preview-meta">No suite selected yet.</div>
+      </div>
+      <button class="ghost" onclick="closeSuitePreview()">Close</button>
+    </div>
+    <div class="meta-callout small muted" id="suite-preview-warning">No warning.</div>
+    <div class="preview-table-wrap">
+      <table class="table" id="suite-preview-table">
+        <thead><tr><th>Case</th><th>Category</th><th>Prompt</th><th>Expected behavior</th><th>Risk</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="grid targets" id="targets-grid">
+    {% for t in targets %}
+    <div class="card target" id="card-{{ t.id }}">
+      <div class="row">
+        <div>
+          <div class="pill">{{ t.platform }}</div>
+          <h2>{{ t.name }}</h2>
+        </div>
+        <div id="status-{{ t.id }}" class="status status-{{ t.status.code }}">{{ t.status.label }}</div>
+      </div>
+      <p class="small">{{ t.description or t.target_spec.purpose }}</p>
+      <div class="small muted">{{ t.target_spec.role }}</div>
+      <div class="meta-grid meta-grid-4">
+        <div><span class="meta-label">Platform</span><span id="platform-{{ t.id }}">{{ t.platform }}</span></div>
+        <div><span class="meta-label">Family</span><span id="family-{{ t.id }}">{{ t.profile.family }}</span></div>
+        <div><span class="meta-label">Status</span><span id="status-copy-{{ t.id }}">{{ t.status.label }}</span></div>
+        <div><span class="meta-label">Last trust</span><span id="trust-{{ t.id }}">{{ t.last_run.trust_label if t.last_run else 'No run yet' }}</span></div>
+      </div>
+      <div class="meta-grid meta-grid-3 compact-grid">
+        <div><span class="meta-label">Domain</span><span id="domain-{{ t.id }}">{{ t.profile.domain }}</span></div>
+        <div><span class="meta-label">Suite source</span><span id="suite-source-{{ t.id }}">{{ t.suite_source }}</span></div>
+        <div><span class="meta-label">Last score</span><span id="score-{{ t.id }}">{{ t.last_run.score_display if t.last_run else 'No run yet' }}</span></div>
+      </div>
+      <div class="small muted" id="detail-{{ t.id }}">{{ t.run_blocked_reason or t.status.detail }}</div>
+      {% if t.warning %}
+      <div class="small muted warning-text" id="warning-{{ t.id }}">{{ t.warning }}</div>
+      {% endif %}
+      <div class="caps" id="caps-{{ t.id }}">
+        {% for cap in t.profile.capabilities %}
+        <span class="chip">{{ cap }}</span>
+        {% endfor %}
+      </div>
+      <div class="actions">
+        <label class="mode-picker small" for="mode-{{ t.id }}">Mode</label>
+        <select id="mode-{{ t.id }}" class="mode-select">
+          {% for mode in t.available_modes %}
+          <option value="{{ mode }}">{{ mode|capitalize }}</option>
+          {% endfor %}
+        </select>
+        <div class="stack-actions">
+          <button class="ghost small-action" onclick="previewSuite('{{ t.id }}')">Preview Suite</button>
+          <button class="ghost small-action" onclick="generatePlan('{{ t.id }}')">Generate Test Plan</button>
+          <button class="ghost small-action" onclick="probeTarget('{{ t.id }}')">Probe Target</button>
+          <button id="run-{{ t.id }}" onclick="runTarget('{{ t.id }}')" {% if not t.status.usable %}disabled{% endif %}>Run CrashLab</button>
+        </div>
+      </div>
+      <div class="progress"><div id="bar-{{ t.id }}"></div></div>
+      <div class="small muted" id="summary-{{ t.id }}">{{ t.last_run.summary if t.last_run else 'No run yet.' }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="grid lower">
+    <div class="card">
+      <div class="row"><h3>Live run log</h3><span class="pill dark" id="live-target">Waiting</span></div>
+      <div class="small muted" id="live-summary">No active run.</div>
+      <div class="meta-callout small muted" id="live-meta">No run metadata yet.</div>
+      <div id="live-log" class="log"></div>
+    </div>
+    <div class="card">
+      <div class="row"><h3>Compare latest results</h3><button class="ghost" onclick="refreshCompare()">Refresh</button></div>
+      <div class="small muted">Only trusted runs with complete evaluated output are included here.</div>
+      <div class="kpis">
+        <div class="box"><div class="label">Highest risk</div><div class="value" id="highest-risk">—</div></div>
+        <div class="box"><div class="label">Top issue</div><div class="value" id="top-issue">—</div></div>
+      </div>
+      <table class="table" id="fail-table">
+        <thead><tr><th>Target</th><th>Category</th><th>Example</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card history-card">
+    <div class="row"><h3>Recent runs</h3><button class="ghost" onclick="refreshHistory()">Refresh</button></div>
+    <table class="table" id="history-table">
+      <thead><tr><th>Target</th><th>Outcome</th><th>Benchmark</th><th>Summary</th><th>Run metadata</th><th>Exports</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</div>
+<script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>
