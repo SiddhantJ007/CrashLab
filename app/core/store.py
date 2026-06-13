@@ -1,10 +1,12 @@
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-DB = Path(__file__).resolve().parents[1] / "data" / "crashlab.db"
+DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "crashlab.db"
+DB = Path(os.getenv("CRASHLAB_DB_PATH", str(DEFAULT_DB))).expanduser().resolve()
 DB.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -94,6 +96,14 @@ def _ensure_column(connection, table, column, column_type):
     columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+
+def has_any_runs() -> bool:
+    init_db()
+    connection = conn()
+    row = connection.execute("SELECT 1 FROM runs LIMIT 1").fetchone()
+    connection.close()
+    return bool(row)
 
 
 # Runs and case rows are persisted so the dashboard, compare view, and exports all read

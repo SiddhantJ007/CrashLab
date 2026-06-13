@@ -4,7 +4,7 @@
       "id": "flowise_std",
       "name": "Flowise Cloud Orchestrator",
       "kind": "flowise",
-      "description": "Verified Flowise cloud Prediction API target with agentflow-style orchestration behavior",
+      "description": "Verified Flowise cloud Prediction API target with agentflow-style orchestration behavior Public bootstrap example; configure a live endpoint from the dashboard to run fresh evaluations.",
       "enabled": true,
       "profile": {
         "family": "agent_orchestrator",
@@ -186,8 +186,8 @@
         ]
       },
       "settings": {
-        "base_url": "https://your-flowise-host.example.com",
-        "flow_id": "your-flowise-flow-id",
+        "base_url": "",
+        "flow_id": "",
         "auth_header": "Authorization",
         "auth_token_env": "FLOWISE_API_KEY",
         "connect_timeout_seconds": 10,
@@ -200,7 +200,7 @@
       "id": "langflow_std",
       "name": "Langflow Feedback Analysis Pipeline",
       "kind": "langflow",
-      "description": "Static Langflow analysis pipeline for community-feedback classification, summary, and action guidance",
+      "description": "Static Langflow analysis pipeline for community-feedback classification, summary, and action guidance Public bootstrap example; configure a live endpoint from the dashboard to run fresh evaluations.",
       "enabled": true,
       "profile": {
         "family": "analysis_pipeline",
@@ -371,16 +371,13 @@
         ]
       },
       "settings": {
-        "base_url": "https://your-langflow-host.example.com",
-        "flow_id": "your-langflow-flow-id",
+        "base_url": "",
+        "flow_id": "",
         "api_key_env": "LANGFLOW_API_KEY",
-        "preferred_output_index": 0,
-        "preferred_nested_index": 0,
-        "preferred_result_key": "message",
-        "input_format": "plain_text",
         "input_type": "chat",
         "output_type": "chat",
-        "session_id": "crashlab-langflow-example",
+        "input_format": "plain_text",
+        "session_id": "crashlab-langflow_std",
         "read_timeout_seconds": 60,
         "timeout_retry_count": 0,
         "side_effects": "no"

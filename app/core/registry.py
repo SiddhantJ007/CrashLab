@@ -1,9 +1,13 @@
 from app.adapters.custom_api import CustomAPIAdapter
 from app.adapters.flowise import FlowiseAdapter
 from app.adapters.langflow import LangflowAdapter
-from app.adapters.webarena import WebArenaAdapter
 from app.core.models import Target
 from app.core.tests import available_modes_for_target, effective_target_spec
+
+try:
+    from app.adapters.webarena import WebArenaAdapter
+except ModuleNotFoundError:  # Public v1 does not ship WebArena in the live product flow.
+    WebArenaAdapter = None
 
 
 def platform_label_for(target: Target) -> str:
@@ -36,7 +40,7 @@ class Registry:
             return LangflowAdapter(target)
         if target.kind == "custom_api":
             return CustomAPIAdapter(target)
-        if target.kind == "webarena":
+        if target.kind == "webarena" and WebArenaAdapter is not None:
             return WebArenaAdapter(target)
         return None
 
