@@ -11,12 +11,12 @@ class FlowiseAdapter(BaseAdapter):
         return ("base_url", "flow_id")
 
     def probe_url(self):
-        base_url = self.target.settings.get("base_url", "").rstrip("/")
+        base_url = str(self.setting("base_url", "") or "").rstrip("/")
         return base_url or None
 
     def endpoint_url(self):
-        base_url = self.target.settings.get("base_url", "").rstrip("/")
-        flow_id = self.target.settings.get("flow_id", "")
+        base_url = str(self.setting("base_url", "") or "").rstrip("/")
+        flow_id = str(self.setting("flow_id", "") or "").strip()
         if not base_url or not flow_id:
             return None
         return f"{base_url}/api/v1/prediction/{flow_id}"

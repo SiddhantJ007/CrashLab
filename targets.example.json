@@ -193,7 +193,9 @@
         "connect_timeout_seconds": 10,
         "read_timeout_seconds": 120,
         "timeout_retry_count": 1,
-        "side_effects": "no"
+        "side_effects": "no",
+        "base_url_env": "FLOWISE_BASE_URL",
+        "flow_id_env": "FLOWISE_FLOW_ID"
       }
     },
     {
@@ -383,7 +385,9 @@
         "session_id": "crashlab-langflow-example",
         "read_timeout_seconds": 60,
         "timeout_retry_count": 0,
-        "side_effects": "no"
+        "side_effects": "no",
+        "base_url_env": "LANGFLOW_BASE_URL",
+        "flow_id_env": "LANGFLOW_FLOW_ID"
       }
     }
   ]

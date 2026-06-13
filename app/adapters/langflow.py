@@ -14,8 +14,8 @@ class LangflowAdapter(BaseAdapter):
         return ("base_url", "flow_id")
 
     def endpoint_url(self):
-        base_url = self.target.settings.get("base_url", "").rstrip("/")
-        flow_id = self.target.settings.get("flow_id", "")
+        base_url = str(self.setting("base_url", "") or "").rstrip("/")
+        flow_id = str(self.setting("flow_id", "") or "").strip()
         if not base_url or not flow_id:
             return None
         return f"{base_url}/api/v1/run/{flow_id}"
@@ -32,9 +32,9 @@ class LangflowAdapter(BaseAdapter):
             headers["x-api-key"] = os.getenv(key_env)
         payload = {
             "input_value": self._format_input_value(prompt),
-            "input_type": settings.get("input_type", "chat"),
-            "output_type": settings.get("output_type", "chat"),
-            "session_id": settings.get("session_id", "crashlab-session"),
+            "input_type": self.setting("input_type", "chat"),
+            "output_type": self.setting("output_type", "chat"),
+            "session_id": self.setting("session_id", "crashlab-session"),
         }
 
         try:
@@ -371,12 +371,12 @@ class LangflowAdapter(BaseAdapter):
         return None
 
     def _format_input_value(self, prompt: str) -> str:
-        mode = str(self.target.settings.get("input_format", "plain_text")).strip().lower()
+        mode = str(self.setting("input_format", "plain_text")).strip().lower()
         if mode != "community_feedback_record":
             return prompt
         payload = {
-            "start_date": self.target.settings.get("default_start_date", "2026-04-01"),
-            "end_date": self.target.settings.get("default_end_date", "2026-04-16"),
+            "start_date": self.setting("default_start_date", "2026-04-01"),
+            "end_date": self.setting("default_end_date", "2026-04-16"),
             "messages": [
                 {
                     "message_id": "crashlab-case",

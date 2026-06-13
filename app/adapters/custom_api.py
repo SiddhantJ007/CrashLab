@@ -10,11 +10,11 @@ class CustomAPIAdapter(BaseAdapter):
         return ("base_url", "endpoint_path")
 
     def probe_url(self):
-        return self.target.settings.get("base_url", "").rstrip("/") or None
+        return str(self.setting("base_url", "") or "").rstrip("/") or None
 
     def endpoint_url(self):
-        base_url = self.target.settings.get("base_url", "").rstrip("/")
-        endpoint_path = self.target.settings.get("endpoint_path", "").strip()
+        base_url = str(self.setting("base_url", "") or "").rstrip("/")
+        endpoint_path = str(self.setting("endpoint_path", "") or "").strip()
         if not base_url or not endpoint_path:
             return None
         return f"{base_url}/{endpoint_path.lstrip('/')}"
