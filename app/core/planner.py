@@ -16,13 +16,25 @@ LLM_PLANNER_MODEL = os.getenv("OPENAI_PLANNER_MODEL", "gpt-4.1-mini")
 
 # Planner helpers normalize runtime config so generated plans, run exports, and reports can
 # show exactly which base URL and flow or endpoint path were used for a target.
-def target_runtime_config(target: Target) -> Dict[str, Any]:
+def _runtime_setting(target: Target, key: str, default: Any = None):
     settings = target.settings or {}
+    value = settings.get(key)
+    if value not in (None, ""):
+        return value
+    env_name = settings.get(f"{key}_env")
+    if isinstance(env_name, str) and env_name.strip():
+        env_value = os.getenv(env_name.strip())
+        if env_value not in (None, ""):
+            return env_value
+    return default
+
+
+def target_runtime_config(target: Target) -> Dict[str, Any]:
     return {
-        "base_url": settings.get("base_url"),
-        "flow_id": settings.get("flow_id"),
-        "endpoint_path": settings.get("endpoint_path"),
-        "side_effects": settings.get("side_effects", "unknown"),
+        "base_url": _runtime_setting(target, "base_url"),
+        "flow_id": _runtime_setting(target, "flow_id"),
+        "endpoint_path": _runtime_setting(target, "endpoint_path"),
+        "side_effects": _runtime_setting(target, "side_effects", "unknown"),
     }
 
 

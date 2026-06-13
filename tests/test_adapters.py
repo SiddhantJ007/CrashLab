@@ -90,3 +90,32 @@ def test_custom_api_adapter_parses_text_candidate(monkeypatch):
     result = adapter.execute("prompt")
     assert result["ok"] is True
     assert result["text"] == "Hello from the custom API."
+
+
+def test_flowise_adapter_can_resolve_runtime_settings_from_env(monkeypatch):
+    monkeypatch.setenv("FLOWISE_BASE_URL", "https://flowise.example.com")
+    monkeypatch.setenv("FLOWISE_FLOW_ID", "flow-env-1")
+    target = make_target(
+        kind="flowise",
+        platform="Flowise",
+        profile={"family": "agent_orchestrator", "domain": "software_workflow", "capabilities": [], "supports_tools": True},
+        target_spec={"role": "orchestrator", "purpose": "route work", "expected_output_style": "structured_answer", "demo_suite": [], "full_suite": [], "challenge_suite": []},
+        settings={"base_url": "", "flow_id": "", "base_url_env": "FLOWISE_BASE_URL", "flow_id_env": "FLOWISE_FLOW_ID", "auth_token_env": "FLOWISE_API_KEY", "side_effects": "no"},
+    )
+    adapter = FlowiseAdapter(target)
+    assert adapter.missing_settings() == []
+    assert adapter.endpoint_url() == "https://flowise.example.com/api/v1/prediction/flow-env-1"
+
+
+def test_langflow_adapter_missing_config_mentions_env_vars():
+    target = make_target(
+        kind="langflow",
+        platform="Langflow",
+        profile={"family": "analysis_pipeline", "domain": "community_feedback", "capabilities": [], "supports_tools": False},
+        target_spec={"role": "analysis", "purpose": "feedback analysis", "expected_output_style": "json", "demo_suite": [], "full_suite": [], "challenge_suite": []},
+        settings={"base_url": "", "flow_id": "", "base_url_env": "LANGFLOW_BASE_URL", "flow_id_env": "LANGFLOW_FLOW_ID", "side_effects": "no"},
+    )
+    status = LangflowAdapter(target).readiness()
+    assert status.code == "missing_config"
+    assert "LANGFLOW_BASE_URL" in status.detail
+    assert "LANGFLOW_FLOW_ID" in status.detail

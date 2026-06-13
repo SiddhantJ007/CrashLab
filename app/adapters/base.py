@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
@@ -13,8 +14,8 @@ class TargetExecutionError(RuntimeError):
         self.detail = detail
 
 
-# BaseAdapter centralizes readiness checks, timeout handling, and response-field
-# extraction so every platform adapter reports failures in a consistent way.
+# BaseAdapter centralizes readiness checks, timeout handling, runtime setting resolution,
+# and response-field extraction so every platform adapter reports failures consistently.
 class BaseAdapter:
     def __init__(self, target: Target):
         self.target = target
@@ -29,13 +30,36 @@ class BaseAdapter:
     def probe_url(self) -> Optional[str]:
         return self.endpoint_url()
 
+    # Bootstrap targets can keep live endpoints out of git by declaring base_url_env,
+    # flow_id_env, or endpoint_path_env. Direct values still win when explicitly set.
+    def setting(self, key: str, default: Any = None):
+        value = self.target.settings.get(key)
+        if value not in (None, ""):
+            return value
+        env_name = self.target.settings.get(f"{key}_env")
+        if isinstance(env_name, str) and env_name.strip():
+            env_value = os.getenv(env_name.strip())
+            if env_value not in (None, ""):
+                return env_value
+        return default
+
     def missing_settings(self) -> List[str]:
         missing = []
         for key in self.required_settings():
-            value = self.target.settings.get(key)
+            value = self.setting(key)
             if value is None or (isinstance(value, str) and not value.strip()):
                 missing.append(key)
         return missing
+
+    def missing_settings_detail(self, missing: List[str]) -> str:
+        labels = []
+        for key in missing:
+            env_name = self.target.settings.get(f"{key}_env")
+            if isinstance(env_name, str) and env_name.strip():
+                labels.append(f"{key} (set {env_name.strip()})")
+            else:
+                labels.append(key)
+        return f"Missing required settings: {', '.join(labels)}"
 
     def readiness(self) -> TargetStatus:
         if not self.target.enabled:
@@ -45,7 +69,7 @@ class BaseAdapter:
 
         missing = self.missing_settings()
         if missing:
-            status = TargetStatus.missing_config(f"Missing required settings: {', '.join(missing)}")
+            status = TargetStatus.missing_config(self.missing_settings_detail(missing))
             self._last_status = status
             return status
 
@@ -134,19 +158,19 @@ class BaseAdapter:
         raise NotImplementedError
 
     def connect_timeout_seconds(self) -> float:
-        return float(self.target.settings.get("connect_timeout_seconds", 5))
+        return float(self.setting("connect_timeout_seconds", 5))
 
     def read_timeout_seconds(self) -> float:
-        return float(self.target.settings.get("read_timeout_seconds", 60))
+        return float(self.setting("read_timeout_seconds", 60))
 
     def write_timeout_seconds(self) -> float:
-        return float(self.target.settings.get("write_timeout_seconds", 30))
+        return float(self.setting("write_timeout_seconds", 30))
 
     def pool_timeout_seconds(self) -> float:
-        return float(self.target.settings.get("pool_timeout_seconds", 5))
+        return float(self.setting("pool_timeout_seconds", 5))
 
     def timeout_retry_count(self) -> int:
-        return int(self.target.settings.get("timeout_retry_count", 0))
+        return int(self.setting("timeout_retry_count", 0))
 
     def http_timeout(self) -> httpx.Timeout:
         return httpx.Timeout(
@@ -157,7 +181,7 @@ class BaseAdapter:
         )
 
     # All adapters use the same HTTP wrapper so execution failures, provider quota errors,
-# and retryable timeout types are normalized before the runner assigns trust labels.
+    # and retryable timeout types are normalized before the runner assigns trust labels.
     def request_json(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, json_body: Optional[Dict[str, Any]] = None):
         attempts = self.timeout_retry_count() + 1
         last_timeout_kind = "timeout"
