@@ -119,3 +119,22 @@ def test_langflow_adapter_missing_config_mentions_env_vars():
     assert status.code == "missing_config"
     assert "LANGFLOW_BASE_URL" in status.detail
     assert "LANGFLOW_FLOW_ID" in status.detail
+
+
+def test_flowise_adapter_accepts_full_prediction_url_in_base_url():
+    target = make_target(
+        kind="flowise",
+        platform="Flowise",
+        profile={"family": "agent_orchestrator", "domain": "software_workflow", "capabilities": [], "supports_tools": True},
+        target_spec={"role": "orchestrator", "purpose": "route work", "expected_output_style": "structured_answer", "demo_suite": [], "full_suite": [], "challenge_suite": []},
+        settings={
+            "base_url": "https://cloud.flowiseai.com/api/v1/prediction/ac34cd2d-f5f8-4edb-8398-0e1345c0cf58",
+            "flow_id": "ac34cd2d-f5f8-4edb-8398-0e1345c0cf58",
+            "auth_token_env": "FLOWISE_API_KEY",
+            "side_effects": "no",
+        },
+    )
+    adapter = FlowiseAdapter(target)
+    assert adapter.missing_settings() == []
+    assert adapter.endpoint_url() == "https://cloud.flowiseai.com/api/v1/prediction/ac34cd2d-f5f8-4edb-8398-0e1345c0cf58"
+    assert adapter.probe_url() == "https://cloud.flowiseai.com"

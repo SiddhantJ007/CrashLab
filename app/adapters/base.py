@@ -181,7 +181,8 @@ class BaseAdapter:
         )
 
     # All adapters use the same HTTP wrapper so execution failures, provider quota errors,
-    # and retryable timeout types are normalized before the runner assigns trust labels.
+    # invalid JSON responses, and retryable timeout types are normalized before the runner
+    # assigns trust labels.
     def request_json(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, json_body: Optional[Dict[str, Any]] = None):
         attempts = self.timeout_retry_count() + 1
         last_timeout_kind = "timeout"
@@ -191,7 +192,14 @@ class BaseAdapter:
                 with httpx.Client(timeout=self.http_timeout(), follow_redirects=True) as client:
                     response = client.request(method, url, headers=headers, json=json_body)
                 response.raise_for_status()
-                return response.json(), attempt
+                try:
+                    return response.json(), attempt
+                except ValueError:
+                    preview = response.text[:300].replace("\n", " ").strip()
+                    raise TargetExecutionError(
+                        "invalid_json_response",
+                        f"Target returned a non-JSON response. URL: {url}. Preview: {preview or '[empty response]'}",
+                    )
             except httpx.ReadTimeout:
                 last_timeout_kind = "timeout_read"
                 last_timeout_detail = f"Read timeout after {self.read_timeout_seconds()}s"

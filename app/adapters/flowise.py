@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlsplit
 
 from app.adapters.base import BaseAdapter
 from app.core.models import TargetStatus
@@ -8,18 +9,38 @@ from app.core.models import TargetStatus
 # flow and extracts both response text and observable execution metadata for reporting.
 class FlowiseAdapter(BaseAdapter):
     def required_settings(self):
+        base_url = str(self.setting("base_url", "") or "").strip()
+        if "/api/v1/prediction/" in base_url:
+            return ("base_url",)
         return ("base_url", "flow_id")
 
-    def probe_url(self):
-        base_url = str(self.setting("base_url", "") or "").rstrip("/")
-        return base_url or None
+    def _raw_base_url(self) -> str:
+        return str(self.setting("base_url", "") or "").strip().rstrip("/")
 
-    def endpoint_url(self):
-        base_url = str(self.setting("base_url", "") or "").rstrip("/")
+    def _normalized_prediction_url(self):
+        base_url = self._raw_base_url()
         flow_id = str(self.setting("flow_id", "") or "").strip()
-        if not base_url or not flow_id:
+        if not base_url:
+            return None
+        if "/api/v1/prediction/" in base_url:
+            return base_url
+        if base_url.endswith("/api/v1/prediction") and flow_id:
+            return f"{base_url}/{flow_id}"
+        if not flow_id:
             return None
         return f"{base_url}/api/v1/prediction/{flow_id}"
+
+    def probe_url(self):
+        prediction_url = self._normalized_prediction_url()
+        if not prediction_url:
+            return None
+        if "/api/v1/prediction/" not in prediction_url:
+            return prediction_url
+        parsed = urlsplit(prediction_url)
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    def endpoint_url(self):
+        return self._normalized_prediction_url()
 
     def _summarize_agent_flow(self, executed_data):
         if not isinstance(executed_data, list):
@@ -66,7 +87,7 @@ class FlowiseAdapter(BaseAdapter):
         candidates = self.extract_text_candidates(data)
         if not text and candidates:
             text = candidates[0]
-        agent_flow_summary = self._summarize_agent_flow(data.get("agentFlowExecutedData")) if isinstance(data, dict) else {"step_count": 0, "node_labels": [], "tool_like_steps": 0}
+        agent_flow_summary = self._summarize_agentFlow(data.get("agentFlowExecutedData")) if False else self._summarize_agent_flow(data.get("agentFlowExecutedData")) if isinstance(data, dict) else {"step_count": 0, "node_labels": [], "tool_like_steps": 0}
         meta = {
             "request_summary": {
                 "url": url,
