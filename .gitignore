@@ -1,14 +1,13 @@
-# Python
+# Python cache and tooling
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.so
-.python-version
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
+coverage/
 htmlcov/
 
 # Virtual environments
@@ -20,55 +19,51 @@ lf-venv/
 langflow-venv/
 webarena-verified-venv/
 
-# Secrets and local config
+# Environment and secrets
 .env
 .env.*
 !.env.sample
-*.pem
-*.key
-*.crt
-secrets*/
 
-# Local app data and generated outputs
+# Local databases and generated state
+*.db
+*.sqlite
+*.sqlite3
 app/data/*.db
 app/data/*.sqlite
 app/data/*.sqlite3
 app/runs/
+logs/
+*.log
+
+# Generated reports and submission artifacts
 report/
 submission/
-*.log
-logs/
+crashlab-run-*.json
+crashlab-run-*.csv
+crashlab-run-*.md
 
-# OS / editor noise
+# Screenshots and local media unless intentionally curated elsewhere
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.gif
+
+# OS and editor files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# Node / frontend artifacts
+# Frontend/build leftovers
 node_modules/
 dist/
 build/
-coverage/
 
-# Archives and generated docs
+# Archives and docs exports
 *.zip
 *.tar
 *.gz
 *.docx
 *.pdf
-
-# Local screenshots and exports
-*.png
-*.jpg
-*.jpeg
-*.heic
-*.csv
-*.md.bak
-
-# Keep tracked project docs, but ignore ad hoc generated markdown exports if created elsewhere
-crashlab-run-*.json
-crashlab-run-*.csv
-crashlab-run-*.md
-targets.json
-targets.json
+CrashLab-public/

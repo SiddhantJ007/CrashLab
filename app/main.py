@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from app.core.config import load_targets
+from app.core.sample_data import seed_public_demo_runs
 from app.core.planner import generate_target_plan, latest_probe_or_none, resolve_suite_for_target, run_probe, suite_preview, target_side_effect_warning
 from app.core.registry import build_registry
 from app.core.runner import build_run_csv, build_run_export, build_run_markdown_summary, compare_latest, get_run, history_runs, start_run
@@ -66,9 +67,11 @@ def load_local_env(path: Path):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    load_local_env(BASE_DIR.parent / ".env")
+    if os.getenv("CRASHLAB_LOAD_DOTENV", "1") != "0":
+        load_local_env(BASE_DIR.parent / ".env")
     init_db()
     reload_registry(app)
+    seed_public_demo_runs(app.state.registry)
     yield
 
 
@@ -274,7 +277,7 @@ def home(request: Request):
         "index.html",
         {
             "targets": list(visible_targets().values()),
-            "asset_version": "r5-final-ui-4",
+            "asset_version": "v1-public-render-1",
         },
     )
 

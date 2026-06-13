@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: crashlab-v1
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CRASHLAB_LOAD_DOTENV
+        value: '0'
+      - key: CRASHLAB_SEED_SAMPLE_DATA
+        value: '1'

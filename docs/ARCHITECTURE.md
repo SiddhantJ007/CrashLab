@@ -1,65 +1,59 @@
 # CrashLab Architecture
 
-CrashLab evaluates **API-accessible LLM workflows** through a target-aware pipeline.
+CrashLab is a single FastAPI application that evaluates API-accessible LLM workflows through a target-aware pipeline.
 
-## Evaluation Pipeline
+## Evaluation Flow
+1. Load sanitized bootstrap targets from `targets.json`.
+2. Merge dashboard-created targets from SQLite.
+3. Resolve the active suite source for the selected mode.
+   - approved generated plan
+   - explicit target spec
+   - default family template
+   - block `custom_or_unknown` without a reviewed plan
+4. Execute each case through the platform adapter.
+5. Parse output conservatively.
+6. Route the case through a family-aware evaluator.
+7. Aggregate weighted results.
+8. Assign a trust label.
+9. Export Markdown, JSON, or CSV.
 
-1. **Test case selection**
-   - CrashLab resolves a suite from one of three sources:
-     1. approved generated plan
-     2. explicit target spec
-     3. default family template
-   - `custom_or_unknown` targets are blocked unless a reviewed plan exists.
+## Adapters
+CrashLab v1 exposes these public adapters:
+- Flowise
+- Langflow
+- Custom API
 
-2. **Target execution**
-   - The runner sends each case prompt through a platform adapter.
-   - Current adapters include Flowise, Langflow, and a bounded Custom API path.
+Each adapter is responsible for:
+- runtime request formatting
+- endpoint execution
+- response parsing
+- metadata capture
+- explicit parse failure reporting when output is unusable
 
-3. **Response parsing**
-   - CrashLab extracts the most trustworthy output candidate it can find.
-   - Parsing is conservative by design.
-   - If a response cannot be parsed into a stable text or schema-shaped output, the case is not treated as a valid benchmark success.
+## Families
+The family system keeps evaluation tied to the target’s intended job:
+- `agent_orchestrator`
+- `analysis_pipeline`
+- `rag_assistant`
+- `general_chatbot`
+- `custom_or_unknown`
 
-4. **Failure detection**
-   - CrashLab distinguishes between:
-     - execution failures
-     - timeout instability
-     - parse/schema failures
-     - evaluated but unsafe or low-quality responses
-   - This prevents misleading scores when the underlying run is not trustworthy.
+This prevents a workflow orchestrator from being graded like a generic chatbot, or a schema-driven analysis pipeline from being treated like open-ended chat.
 
-5. **Family-specific evaluation**
-   - The evaluator routes the parsed output to a family-specific rubric.
-   - Examples:
-     - `agent_orchestrator`: routing, ambiguity handling, unsafe shortcut resistance
-     - `analysis_pipeline`: schema correctness, grounded summary, weak-evidence handling
-     - `rag_assistant`: groundedness and context-bound behavior
-     - `general_chatbot`: instruction following and refusal behavior
+## Trust Model
+CrashLab does not turn every run into a benchmark score.
 
-6. **Trust label assignment**
-   - After case execution, the runner aggregates results and assigns a trust label such as:
-     - `Trusted`
-     - `Needs Review`
-     - `Parse Failed`
-     - `Execution Failed`
-     - `Execution Unstable`
-     - `Unsafe / Ungrounded`
+Execution failures, timeouts, and parse failures are surfaced as trust issues instead of being hidden behind a normal-looking score. Trusted comparison only includes complete runs with usable evaluated output.
 
-7. **Report export**
-   - Completed runs can be exported as:
-     - Markdown
-     - JSON
-     - CSV
-   - Reports include target metadata, suite source, trust label, score, case outcomes, and selected runtime metadata.
+## Public Demo Mode
+The public v1 release seeds sanitized historical sample runs when the local database is empty. This keeps the Render demo useful without bundling private endpoints, local databases, or deployed Flowise/Langflow instances.
 
-## Why the Design Matters
-CrashLab is intentionally not a universal agent benchmark.
+Sample mode demonstrates:
+- target cards
+- suite preview
+- run history
+- weighted scoring
+- trust labels
+- report export
 
-Its main design claim is narrower and more defensible:
-**workflow evaluation should depend on target role, output expectations, and observable failure modes.**
-
-That is why the system uses:
-- target families
-- explicit parse failure handling
-- risk-weighted case scoring
-- trust labels instead of unconditional scores
+Fresh live runs still require a user-configured external target.
