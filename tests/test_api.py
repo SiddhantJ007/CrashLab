@@ -11,7 +11,7 @@ def test_targets_endpoint_hides_webarena(client):
     assert response.status_code == 200
     payload = response.json()
     assert 'flowise_std' in payload
-    assert 'langflow_std' in payload
+    assert 'dify_std' in payload
     assert all(item.get('kind') != 'webarena' for item in payload.values())
 
 

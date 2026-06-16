@@ -12,12 +12,12 @@
     <div>
       <div class="eyebrow">Target-aware evaluation for API-accessible AI workflows</div>
       <h1>CrashLab</h1>
-      <p class="sub">Add a configured Flowise, Langflow, or custom API workflow, preview the active suite, generate a reviewed test plan, and compare only the runs CrashLab can actually trust.</p>
+      <p class="sub">Run and reconfigure the live Flowise and Dify targets, preview their active suites, and compare only the runs CrashLab can actually trust.</p>
     </div>
     <div class="hero-card">
       <div class="small">Current platform focus</div>
       <div class="metric"><span id="target-count">{{ targets|length }}</span> target types</div>
-      <div class="small muted">Flowise • Langflow • Custom API onboarding</div>
+      <div class="small muted">Flowise • Dify</div>
     </div>
   </header>
 
@@ -40,17 +40,17 @@
     <div class="row">
       <div>
         <h3>Add or Configure Target</h3>
-        <div class="small muted">Create a configured Flowise, Langflow, or compatible custom API target without editing repo files.</div>
+        <div class="small muted">Update the built-in Flowise or Dify target without editing repo files. Saving here replaces that platform slot on the dashboard.</div>
       </div>
       <button class="ghost" onclick="toggleTargetForm()">Close</button>
     </div>
     <form id="target-form" class="target-form">
       <div class="form-grid">
-        <label><span>Target name</span><input name="name" required placeholder="Team Workflow Orchestrator"/></label>
-        <label><span>Platform</span><select name="platform" required><option>Flowise</option><option>Langflow</option><option>Custom API</option></select></label>
-        <label><span>Base URL</span><input name="base_url" required placeholder="https://cloud.flowiseai.com"/></label>
-        <label><span>Flow ID or endpoint path</span><input name="flow_or_endpoint" required placeholder="1770abba-... or api/v1/run/my-flow"/></label>
-        <label><span>API key env var</span><input name="api_key_env" placeholder="FLOWISE_API_KEY"/></label>
+        <label><span>Target name</span><input name="name" placeholder="Optional: keep current name if blank"/></label>
+        <label><span>Platform</span><select name="platform" required><option>Flowise</option><option>Dify</option></select></label>
+        <label><span>Base URL</span><input name="base_url" placeholder="Optional: leave blank to keep current base URL"/></label>
+        <label><span>Flow ID or endpoint path</span><input name="flow_or_endpoint" placeholder="Flowise: flow ID. Dify: optional endpoint path, usually /chat-messages"/></label>
+        <label><span>API key env var</span><input name="api_key_env" placeholder="Optional: leave blank to keep current env var name"/></label>
         <label><span>Target family</span><select name="family" required><option value="agent_orchestrator">agent_orchestrator</option><option value="rag_assistant">rag_assistant</option><option value="analysis_pipeline">analysis_pipeline</option><option value="general_chatbot">general_chatbot</option><option value="custom_or_unknown">custom_or_unknown</option></select></label>
         <label><span>Expected output style</span><select name="expected_output_style" required><option value="text">text</option><option value="json">json</option><option value="structured_answer">structured_answer</option></select></label>
         <label><span>Timeout seconds</span><input name="timeout_seconds" type="number" min="5" value="60"/></label>
@@ -66,7 +66,7 @@
         <button type="button" class="ghost" onclick="suggestTargetPlan()">Suggest Suite</button>
         <button type="submit">Save target</button>
       </div>
-      <div class="small muted" id="target-form-feedback">Manual family selection is always supported. Suggested suites are optional.</div>
+      <div class="small muted" id="target-form-feedback">Manual family selection is always supported. Suggested suites are optional, and saving here updates the selected platform card instead of creating a new one.</div>
     </form>
   </section>
 
@@ -134,7 +134,7 @@
         </div>
       </div>
       <div class="progress"><div id="bar-{{ t.id }}"></div></div>
-      <div class="small muted" id="summary-{{ t.id }}">{{ t.last_run.summary if t.last_run else 'No run yet.' }}</div>
+      <div class="small muted" id="summary-{{ t.id }}">No run yet.</div>
     </div>
     {% endfor %}
   </section>
@@ -148,7 +148,7 @@
     </div>
     <div class="card">
       <div class="row"><h3>Compare latest results</h3><button class="ghost" onclick="refreshCompare()">Refresh</button></div>
-      <div class="small muted">Only trusted runs with complete evaluated output are included here.</div>
+      <div class="small muted">The latest visible Flowise and Dify runs are summarized here.</div>
       <div class="kpis">
         <div class="box"><div class="label">Highest risk</div><div class="value" id="highest-risk">—</div></div>
         <div class="box"><div class="label">Top issue</div><div class="value" id="top-issue">—</div></div>

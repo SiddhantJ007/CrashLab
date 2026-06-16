@@ -73,21 +73,31 @@ class FlowiseAdapter(BaseAdapter):
     # Flowise often returns both a primary text field and richer structured metadata. The
     # adapter prefers explicit text, then falls back to text-like candidates conservatively.
     def execute(self, prompt: str):
-        s = self.target.settings
+        settings = self.target.settings
         url = self.endpoint_url()
         headers = {"Content-Type": "application/json"}
-        token_env = s.get("auth_token_env")
-        auth_header = s.get("auth_header", "Authorization")
+        token_env = settings.get("auth_token_env")
+        auth_header = settings.get("auth_header", "Authorization")
         if token_env and os.getenv(token_env):
             token = os.getenv(token_env)
             headers[auth_header] = f"Bearer {token}" if auth_header.lower() == "authorization" else token
+
         payload = {"question": prompt, "streaming": False, "overrideConfig": {}, "history": []}
         data, attempt_count = self.request_json("POST", url, headers=headers, json_body=payload)
+
         text = str(data.get("text", "")).strip() if isinstance(data, dict) else ""
         candidates = self.extract_text_candidates(data)
+        selection_reason = "text_field" if text else "none"
         if not text and candidates:
             text = candidates[0]
-        agent_flow_summary = self._summarize_agentFlow(data.get("agentFlowExecutedData")) if False else self._summarize_agent_flow(data.get("agentFlowExecutedData")) if isinstance(data, dict) else {"step_count": 0, "node_labels": [], "tool_like_steps": 0}
+            selection_reason = "text_candidate:0"
+
+        parsed_json = self.parse_json_text(text)
+        if parsed_json is None and isinstance(data, dict) and self.expected_output_style() == "json":
+            parsed_json = data
+            selection_reason = "payload_json"
+
+        agent_flow_summary = self._summarize_agent_flow(data.get("agentFlowExecutedData")) if isinstance(data, dict) else {"step_count": 0, "node_labels": [], "tool_like_steps": 0}
         meta = {
             "request_summary": {
                 "url": url,
@@ -105,14 +115,24 @@ class FlowiseAdapter(BaseAdapter):
                 "chat_message_id": data.get("chatMessageId") if isinstance(data, dict) else None,
                 "execution_id": data.get("executionId") if isinstance(data, dict) else None,
                 "session_id": data.get("sessionId") if isinstance(data, dict) else None,
+                "selection_reason": selection_reason,
+                "candidate_count": len(candidates),
                 "agent_flow_summary": agent_flow_summary,
             },
             "text_candidates": candidates[:5],
+            "parsed_output": parsed_json or {},
         }
-        if not text:
+
+        if self.expected_output_style() == "json" and not self.matches_expected_schema(parsed_json):
+            status = TargetStatus.response_parse_failed("Flowise returned output, but it did not match the expected JSON schema for this target.")
+            self.set_last_status(status)
+            return {"ok": False, "text": "", "meta": meta, "error_type": status.code, "error": status.detail}
+
+        rendered_text = self.render_expected_output(text, parsed_json)
+        if not rendered_text:
             status = TargetStatus.response_parse_failed("Flowise returned JSON, but no text-like field could be extracted.")
             self.set_last_status(status)
             return {"ok": False, "text": "", "meta": meta, "error_type": status.code, "error": status.detail}
 
         self.set_last_status(TargetStatus.ready("Flowise call and response parsing succeeded."))
-        return {"ok": True, "text": str(text), "meta": meta}
+        return {"ok": True, "text": rendered_text, "meta": meta}

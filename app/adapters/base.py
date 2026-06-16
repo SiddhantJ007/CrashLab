@@ -34,12 +34,12 @@ class BaseAdapter:
     # flow_id_env, or endpoint_path_env. Direct values still win when explicitly set.
     def setting(self, key: str, default: Any = None):
         value = self.target.settings.get(key)
-        if value not in (None, ""):
+        if value not in (None, ''):
             return value
-        env_name = self.target.settings.get(f"{key}_env")
+        env_name = self.target.settings.get(f'{key}_env')
         if isinstance(env_name, str) and env_name.strip():
             env_value = os.getenv(env_name.strip())
-            if env_value not in (None, ""):
+            if env_value not in (None, ''):
                 return env_value
         return default
 
@@ -54,9 +54,9 @@ class BaseAdapter:
     def missing_settings_detail(self, missing: List[str]) -> str:
         labels = []
         for key in missing:
-            env_name = self.target.settings.get(f"{key}_env")
+            env_name = self.target.settings.get(f'{key}_env')
             if isinstance(env_name, str) and env_name.strip():
-                labels.append(f"{key} (set {env_name.strip()})")
+                labels.append(f'{key} (set {env_name.strip()})')
             else:
                 labels.append(key)
         return f"Missing required settings: {', '.join(labels)}"
@@ -74,19 +74,19 @@ class BaseAdapter:
             return status
 
         existing = self.get_last_status()
-        if existing and existing.code in {"response_parse_failed", "provider_quota_exceeded"}:
+        if existing and existing.code in {'response_parse_failed', 'provider_quota_exceeded'}:
             return existing
 
         url = self.probe_url()
         if not url:
-            status = TargetStatus.ready("No reachability probe defined.")
+            status = TargetStatus.ready('No reachability probe defined.')
             self._last_status = status
             return status
 
         try:
             with httpx.Client(timeout=5.0, follow_redirects=True) as client:
                 response = client.get(url)
-            status = TargetStatus.ready(f"Endpoint reachable ({response.status_code}).")
+            status = TargetStatus.ready(f'Endpoint reachable ({response.status_code}).')
         except Exception as exc:
             status = TargetStatus.unreachable(str(exc))
 
@@ -101,15 +101,15 @@ class BaseAdapter:
         return self._last_status or self.target.last_status
 
     def summarize_payload(self, payload: Any, max_chars: int = 280) -> Dict[str, Any]:
-        summary: Dict[str, Any] = {"type": type(payload).__name__}
+        summary: Dict[str, Any] = {'type': type(payload).__name__}
         if isinstance(payload, dict):
-            summary["keys"] = list(payload.keys())[:20]
+            summary['keys'] = list(payload.keys())[:20]
         elif isinstance(payload, list):
-            summary["length"] = len(payload)
+            summary['length'] = len(payload)
         rendered = json.dumps(payload, default=str) if isinstance(payload, (dict, list)) else str(payload)
         if len(rendered) > max_chars:
-            rendered = f"{rendered[:max_chars]}..."
-        summary["preview"] = rendered
+            rendered = f'{rendered[:max_chars]}...'
+        summary['preview'] = rendered
         return summary
 
     # Response parsing stays conservative: if we cannot extract a stable text-like field,
@@ -126,15 +126,7 @@ class BaseAdapter:
                     candidates.append(cleaned)
                 return
             if isinstance(value, dict):
-                preferred_keys = (
-                    "text",
-                    "message",
-                    "output",
-                    "output_text",
-                    "answer",
-                    "content",
-                    "response",
-                )
+                preferred_keys = ('text', 'message', 'output', 'output_text', 'answer', 'content', 'response')
                 for key in preferred_keys:
                     if key in value:
                         walk(value[key])
@@ -154,23 +146,78 @@ class BaseAdapter:
                 seen.add(candidate)
         return deduped
 
+    # These helpers let platform adapters stay family-aware without duplicating basic
+    # JSON extraction or output-schema checks in every adapter implementation.
+    def expected_output_style(self) -> str:
+        return str(self.target.target_spec.expected_output_style or '').strip().lower()
+
+    def expected_output_schema(self) -> Dict[str, Any]:
+        return dict(self.target.target_spec.expected_output_schema or {})
+
+    def parse_json_text(self, value: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if cleaned.startswith('```') and cleaned.endswith('```'):
+            cleaned = cleaned.strip('`').strip()
+            if cleaned.lower().startswith('json'):
+                cleaned = cleaned[4:].strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find('{')
+            end = cleaned.rfind('}')
+            if start == -1 or end == -1 or end <= start:
+                return None
+            try:
+                parsed = json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def matches_expected_schema(self, parsed_json: Optional[Dict[str, Any]]) -> bool:
+        schema = self.expected_output_schema()
+        if not schema:
+            return True
+        if not isinstance(parsed_json, dict):
+            return False
+        for key in schema.keys():
+            value = parsed_json.get(key)
+            if value in (None, ''):
+                return False
+        return True
+
+    def render_expected_output(self, raw_value: Any, parsed_json: Optional[Dict[str, Any]] = None) -> str:
+        style = self.expected_output_style()
+        if style == 'json' and isinstance(parsed_json, dict) and parsed_json:
+            return json.dumps(parsed_json, ensure_ascii=False)
+        if isinstance(raw_value, str):
+            return raw_value.strip()
+        if isinstance(parsed_json, dict) and parsed_json:
+            return json.dumps(parsed_json, ensure_ascii=False)
+        return ''
+
     def execute(self, prompt: str):
         raise NotImplementedError
 
     def connect_timeout_seconds(self) -> float:
-        return float(self.setting("connect_timeout_seconds", 5))
+        return float(self.setting('connect_timeout_seconds', 5))
 
     def read_timeout_seconds(self) -> float:
-        return float(self.setting("read_timeout_seconds", 60))
+        return float(self.setting('read_timeout_seconds', 60))
 
     def write_timeout_seconds(self) -> float:
-        return float(self.setting("write_timeout_seconds", 30))
+        return float(self.setting('write_timeout_seconds', 30))
 
     def pool_timeout_seconds(self) -> float:
-        return float(self.setting("pool_timeout_seconds", 5))
+        return float(self.setting('pool_timeout_seconds', 5))
 
     def timeout_retry_count(self) -> int:
-        return int(self.setting("timeout_retry_count", 0))
+        return int(self.setting('timeout_retry_count', 0))
 
     def http_timeout(self) -> httpx.Timeout:
         return httpx.Timeout(
@@ -185,8 +232,8 @@ class BaseAdapter:
     # assigns trust labels.
     def request_json(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, json_body: Optional[Dict[str, Any]] = None):
         attempts = self.timeout_retry_count() + 1
-        last_timeout_kind = "timeout"
-        last_timeout_detail = ""
+        last_timeout_kind = 'timeout'
+        last_timeout_detail = ''
         for attempt in range(1, attempts + 1):
             try:
                 with httpx.Client(timeout=self.http_timeout(), follow_redirects=True) as client:
@@ -195,31 +242,31 @@ class BaseAdapter:
                 try:
                     return response.json(), attempt
                 except ValueError:
-                    preview = response.text[:300].replace("\n", " ").strip()
+                    preview = response.text[:300].replace('\n', ' ').strip()
                     raise TargetExecutionError(
-                        "invalid_json_response",
-                        f"Target returned a non-JSON response. URL: {url}. Preview: {preview or '[empty response]'}",
+                        'invalid_json_response',
+                        f'Target returned a non-JSON response. URL: {url}. Preview: {preview or "[empty response]"}',
                     )
             except httpx.ReadTimeout:
-                last_timeout_kind = "timeout_read"
-                last_timeout_detail = f"Read timeout after {self.read_timeout_seconds()}s"
+                last_timeout_kind = 'timeout_read'
+                last_timeout_detail = f'Read timeout after {self.read_timeout_seconds()}s'
             except httpx.ConnectTimeout:
-                last_timeout_kind = "timeout_connect"
-                last_timeout_detail = f"Connect timeout after {self.connect_timeout_seconds()}s"
+                last_timeout_kind = 'timeout_connect'
+                last_timeout_detail = f'Connect timeout after {self.connect_timeout_seconds()}s'
             except httpx.TimeoutException:
-                last_timeout_kind = "timeout"
-                last_timeout_detail = "Request timed out"
+                last_timeout_kind = 'timeout'
+                last_timeout_detail = 'Request timed out'
             except httpx.HTTPStatusError as exc:
-                detail = f"HTTP {exc.response.status_code}: {exc.response.text[:300]}"
+                detail = f'HTTP {exc.response.status_code}: {exc.response.text[:300]}'
                 lowered = detail.lower()
-                if any(token in lowered for token in ["quota", "insufficient_quota", "exceeded your current quota", "billing details"]):
-                    raise TargetExecutionError("provider_quota_exceeded", detail)
-                raise TargetExecutionError("http_error", detail)
+                if any(token in lowered for token in ['quota', 'insufficient_quota', 'exceeded your current quota', 'billing details']):
+                    raise TargetExecutionError('provider_quota_exceeded', detail)
+                raise TargetExecutionError('http_error', detail)
             except httpx.HTTPError as exc:
-                raise TargetExecutionError("network_error", str(exc))
+                raise TargetExecutionError('network_error', str(exc))
 
             if attempt >= attempts:
-                retry_note = f" after {attempts} attempts" if attempts > 1 else ""
-                raise TargetExecutionError(last_timeout_kind, f"{last_timeout_detail}{retry_note}")
+                retry_note = f' after {attempts} attempts' if attempts > 1 else ''
+                raise TargetExecutionError(last_timeout_kind, f'{last_timeout_detail}{retry_note}')
 
-        raise TargetExecutionError("timeout", "Request timed out")
+        raise TargetExecutionError('timeout', 'Request timed out')

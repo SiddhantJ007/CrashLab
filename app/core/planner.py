@@ -170,7 +170,7 @@ def build_default_plan_bundle(target: Target, probe_summary: Optional[Dict[str, 
     profile_summary = _plan_profile_summary(target, probe_summary)
     plans = []
     now = int(time.time())
-    for mode, suite in (("demo", spec.demo_suite), ("full", spec.full_suite)):
+    for mode, suite in (("demo", spec.demo_suite), ("challenge", spec.challenge_suite), ("full", spec.full_suite)):
         if not suite:
             continue
         cases = plan_cases_from_suite(suite)
@@ -305,6 +305,16 @@ def _responses_text(payload: Dict[str, Any]) -> str:
     return payload.get("output_text") or "{}"
 
 
+def _analysis_probe_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(meta, dict):
+        return {}
+    for key in ('analysis_pipeline', 'dify', 'langflow'):
+        value = meta.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
 def build_probe_prompt(target: Target) -> str:
     family = target.profile.family
     if family == "analysis_pipeline":
@@ -339,9 +349,9 @@ def run_probe(adapter) -> Dict[str, Any]:
     meta = result.get("meta", {})
     parsed_keys = []
     response_style = "text"
-    langflow = meta.get("langflow", {}) if isinstance(meta, dict) else {}
-    if langflow.get("parsed_json"):
-        parsed_keys = list(langflow["parsed_json"].keys())
+    analysis_meta = _analysis_probe_meta(meta)
+    if analysis_meta.get("parsed_json"):
+        parsed_keys = list(analysis_meta["parsed_json"].keys())
         response_style = "json"
     elif text.startswith("{"):
         response_style = "json_like"

@@ -5,13 +5,13 @@
 ![Render Ready](https://img.shields.io/badge/Render-ready-46E3B7?logo=render&logoColor=111111)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-compile%20%2B%20tests-2088FF?logo=githubactions&logoColor=white)
 
-LLM workflow reliability lab for testing Flowise, Langflow, and custom API agents across failure families like prompt injection, hallucination, schema drift, parse failures, and unstable execution.
+LLM workflow reliability lab for testing Flowise, Dify, and custom API agents across failure families like prompt injection, hallucination, schema drift, parse failures, and unstable execution.
 
-CrashLab is a target-aware evaluation platform for API-accessible LLM workflows. It runs structured test suites against configured Flowise, Langflow, and compatible custom API targets, then turns observable behavior into trust labels, weighted scores, and exportable reports.
+CrashLab is a target-aware evaluation platform for API-accessible LLM workflows. It runs structured test suites against configured Flowise, Dify, and compatible custom API targets, then turns observable behavior into trust labels, weighted scores, and exportable reports.
 
 This public v1 release is intentionally small and safe to ship:
 - one FastAPI app
-- no bundled Flowise or Langflow server
+- no bundled Flowise or Dify server
 - no WebArena in the public UI
 - no private endpoints, API keys, or local databases committed
 - a self-contained sample mode so the dashboard is still meaningful on a fresh deploy
@@ -33,7 +33,7 @@ CrashLab addresses that by making the evaluation target-aware instead of treatin
 ## What CrashLab v1 Does
 CrashLab v1 supports:
 - target onboarding from the dashboard
-- adapter-based execution for Flowise, Langflow, and Custom API targets
+- adapter-based execution for Flowise, Dify, and Custom API targets
 - family-based suite selection for `agent_orchestrator`, `analysis_pipeline`, `rag_assistant`, `general_chatbot`, and `custom_or_unknown`
 - explicit target specs when a target needs a more specific suite than the family default
 - generated or adapted test plans stored in SQLite
@@ -44,12 +44,12 @@ CrashLab v1 supports:
 
 ## Recruiter Demo Script
 1. Open the dashboard.
-2. View the sample Flowise and Langflow targets.
+2. View the sample Flowise and Dify targets.
 3. Preview a family-specific suite from a target card.
 4. Inspect the sample run history.
 5. Open a run and review the trust label and weighted score.
 6. Export the Markdown, JSON, or CSV report.
-7. Add a live Flowise, Langflow, or Custom API target from the dashboard for real external evaluation.
+7. Add a live Flowise, Dify, or Custom API target from the dashboard for real external evaluation.
 
 ## Demo Mode vs Live Target Mode
 ### Demo mode
@@ -67,7 +67,7 @@ CrashLab does not fabricate fresh live evaluations when no real external target 
 ## Supported Adapters
 CrashLab v1 currently exposes these adapters in the public product flow:
 - `Flowise`
-- `Langflow`
+- `Dify`
 - `Custom API`
 
 WebArena code may remain in the repository for private experiments, but it is hidden from the public UI and not part of the shipped v1 workflow.
@@ -184,7 +184,7 @@ The exports include:
 
 ## Demo Modes in This Public Release
 ### Self-contained sample mode
-A fresh public deployment seeds sanitized historical sample runs for the built-in Flowise and Langflow example targets.
+A fresh public deployment seeds sanitized historical sample runs for the built-in Flowise and Dify example targets.
 
 This gives you:
 - target cards
@@ -201,7 +201,7 @@ To run a fresh evaluation, add or edit a target in the dashboard and provide a r
 
 CrashLab v1 does not bundle or deploy:
 - Flowise itself
-- Langflow itself
+- Dify itself
 - WebArena
 
 Those systems should be treated as optional external targets.
@@ -236,7 +236,10 @@ Use placeholder values only until you intentionally connect live targets:
 
 ```bash
 FLOWISE_API_KEY=your_flowise_key_here
-LANGFLOW_API_KEY=your_langflow_key_here
+FLOWISE_BASE_URL=https://your-flowise-host.example.com
+FLOWISE_FLOW_ID=your-flowise-flow-id
+DIFY_API_KEY=your_dify_api_key_here
+DIFY_BASE_URL=https://api.dify.ai/v1
 OPENAI_API_KEY=optional_for_planner
 CRASHLAB_LOAD_DOTENV=0
 CRASHLAB_SEED_SAMPLE_DATA=1
@@ -254,7 +257,7 @@ Persistent disk mode:
 
 ## Public-Safe Bootstrap Config
 - `targets.json` ships with sanitized example targets and no live private endpoints
-- `targets.example.json` shows the fake values expected for Flowise and Langflow
+- `targets.example.json` shows the fake values expected for Flowise and Dify
 - real target credentials should be provided through environment variables and the dashboard, not committed to git
 
 ## Testing
@@ -296,12 +299,12 @@ Current limits:
 - evaluation quality depends on the selected target family and expected output style
 - black-box and gray-box only unless the target exposes richer metadata
 - generated test plans still benefit from human review
-- built-in evaluators are strongest for the currently exercised Flowise and Langflow patterns
+- built-in evaluators are strongest for the currently exercised Flowise and Dify patterns
 - live external targets are optional and must be configured separately
 
 ## v2 Roadmap
 Intentionally deferred from this public v1 release:
-- deeper graph introspection for Flowise and Langflow
+- deeper graph introspection for Flowise and Dify
 - stronger plan generation and review workflows
 - target edit/delete management polish
 - richer regression tracking across workflow versions

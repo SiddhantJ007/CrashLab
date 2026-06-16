@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from app.core.config import load_targets
+from app.core.config import PLATFORM_SLOT_IDS, load_targets
 from app.core.sample_data import seed_public_demo_runs
 from app.core.planner import generate_target_plan, latest_probe_or_none, resolve_suite_for_target, run_probe, suite_preview, target_side_effect_warning
 from app.core.registry import build_registry
@@ -24,10 +24,10 @@ TARGETS_PATH = BASE_DIR.parent / "targets.json"
 
 
 class TargetCreateInput(BaseModel):
-    name: str
+    name: str = ""
     platform: str
-    base_url: str
-    flow_or_endpoint: str
+    base_url: str = ""
+    flow_or_endpoint: str = ""
     api_key_env: str = ""
     description: str = ""
     family: str
@@ -71,7 +71,8 @@ async def lifespan(app: FastAPI):
         load_local_env(BASE_DIR.parent / ".env")
     init_db()
     reload_registry(app)
-    seed_public_demo_runs(app.state.registry)
+    if os.getenv("CRASHLAB_SEED_SAMPLE_DATA", "0") == "1":
+        seed_public_demo_runs(app.state.registry)
     yield
 
 
@@ -92,7 +93,7 @@ def visible_targets():
     cards = {
         key: value
         for key, value in registry().list_targets().items()
-        if value.get("kind") != "webarena"
+        if value.get("kind") in {"flowise", "dify"}
     }
     latest_by_target = {}
     for run in history_runs():
@@ -123,8 +124,8 @@ def normalize_platform(platform: str) -> str:
     raw = (platform or "").strip().lower()
     if raw == "flowise":
         return "flowise"
-    if raw == "langflow":
-        return "langflow"
+    if raw in {"langflow", "dify"}:
+        return "dify"
     return "custom_api"
 
 
@@ -159,90 +160,90 @@ def target_defaults_for_family(family: str):
     return defaults.get(family, defaults["custom_or_unknown"])
 
 
-def _slugify_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or f"target_{uuid.uuid4().hex[:6]}"
-
-
-def _unique_target_id(base_id: str) -> str:
-    existing = set(visible_targets().keys())
-    if base_id not in existing:
-        return base_id
-    index = 2
-    while f"{base_id}_{index}" in existing:
-        index += 1
-    return f"{base_id}_{index}"
+def current_platform_target(kind: str):
+    slot_id = PLATFORM_SLOT_IDS.get(kind)
+    if not slot_id:
+        return None
+    try:
+        return registry().get(slot_id).target
+    except Exception:
+        return None
 
 
 def build_target_payload(form: TargetCreateInput):
     kind = normalize_platform(form.platform)
-    target_id = _unique_target_id(_slugify_name(form.name))
-    family_defaults = target_defaults_for_family(form.family)
+    current = current_platform_target(kind)
+    target_id = PLATFORM_SLOT_IDS.get(kind, kind)
+    family = form.family or (current.profile.family if current else 'general_chatbot')
+    family_defaults = target_defaults_for_family(family)
+    current_settings = dict(current.settings) if current else {}
+    current_spec = current.target_spec.model_dump() if current else {}
+
     settings = {
-        "base_url": form.base_url.strip(),
-        "read_timeout_seconds": int(form.timeout_seconds),
-        "timeout_retry_count": 0,
-        "side_effects": form.side_effects,
+        **current_settings,
+        'read_timeout_seconds': int(form.timeout_seconds or current_settings.get('read_timeout_seconds', 60)),
+        'timeout_retry_count': current_settings.get('timeout_retry_count', 0),
+        'side_effects': form.side_effects or current_settings.get('side_effects', 'unknown'),
     }
+    if form.base_url.strip():
+        settings['base_url'] = form.base_url.strip()
+
     flow_or_endpoint = form.flow_or_endpoint.strip()
     api_key_env = form.api_key_env.strip()
-    if kind == "flowise":
-        settings.update(
-            {
-                "flow_id": flow_or_endpoint,
-                "auth_header": "Authorization",
-                "auth_token_env": api_key_env,
-                "connect_timeout_seconds": 10,
-                "timeout_retry_count": 1,
-            }
-        )
-    elif kind == "langflow":
-        settings.update(
-            {
-                "flow_id": flow_or_endpoint,
-                "api_key_env": api_key_env,
-                "input_type": "chat",
-                "output_type": "chat",
-                "session_id": f"crashlab-{target_id}",
-                "input_format": "plain_text",
-            }
-        )
+    if kind == 'flowise':
+        if flow_or_endpoint:
+            settings['flow_id'] = flow_or_endpoint
+        settings.setdefault('auth_header', 'Authorization')
+        if api_key_env:
+            settings['auth_token_env'] = api_key_env
+        settings.setdefault('connect_timeout_seconds', 10)
+        settings['timeout_retry_count'] = 1
+    elif kind == 'dify':
+        settings['endpoint_path'] = flow_or_endpoint or settings.get('endpoint_path') or '/chat-messages'
+        if api_key_env:
+            settings['api_key_env'] = api_key_env
+        settings.setdefault('response_mode', 'blocking')
+        settings.setdefault('conversation_id', '')
+        settings.setdefault('user', f'crashlab-{target_id}')
     else:
-        settings.update(
-            {
-                "endpoint_path": flow_or_endpoint,
-                "api_key_env": api_key_env,
-            }
-        )
+        settings['endpoint_path'] = flow_or_endpoint or settings.get('endpoint_path', '')
+        if api_key_env:
+            settings['api_key_env'] = api_key_env
+
     if form.output_component.strip():
-        settings["output_component"] = form.output_component.strip()
+        settings['output_component'] = form.output_component.strip()
     if form.preferred_output_index is not None:
-        settings["preferred_output_index"] = form.preferred_output_index
+        settings['preferred_output_index'] = form.preferred_output_index
     if form.preferred_nested_index is not None:
-        settings["preferred_nested_index"] = form.preferred_nested_index
+        settings['preferred_nested_index'] = form.preferred_nested_index
     if form.preferred_result_key.strip():
-        settings["preferred_result_key"] = form.preferred_result_key.strip()
+        settings['preferred_result_key'] = form.preferred_result_key.strip()
+
+    name = form.name.strip() or (current.name if current else {'flowise': 'Flowise Cloud Orchestrator', 'dify': 'Dify Knowledge Retrieval Assistant'}.get(kind, 'Configured Target'))
+    description = form.description.strip() or (current.description if current else '')
+    expected_output_style = form.expected_output_style or current_spec.get('expected_output_style') or FAMILY_DEFAULT_SPECS.get(family, {}).get('expected_output_style', 'text')
 
     return {
-        "id": target_id,
-        "name": form.name.strip(),
-        "kind": kind,
-        "platform": {"flowise": "Flowise", "langflow": "Langflow", "custom_api": "Custom API"}[kind],
-        "description": form.description.strip(),
-        "enabled": bool(form.enabled),
-        "target_source": "onboarded_sqlite",
-        "profile": {
-            "family": form.family,
-            "domain": family_defaults["domain"],
-            "capabilities": family_defaults["capabilities"],
-            "supports_tools": family_defaults["supports_tools"],
+        'id': target_id,
+        'name': name,
+        'kind': kind,
+        'platform': {'flowise': 'Flowise', 'dify': 'Dify', 'custom_api': 'Custom API'}[kind],
+        'description': description,
+        'enabled': bool(form.enabled),
+        'target_source': 'onboarded_sqlite',
+        'profile': {
+            'family': family,
+            'domain': family_defaults['domain'],
+            'capabilities': family_defaults['capabilities'],
+            'supports_tools': family_defaults['supports_tools'],
         },
-        "target_spec": {
-            "role": FAMILY_DEFAULT_SPECS.get(form.family, {}).get("role", form.family.replace("_", " ")),
-            "purpose": form.description.strip(),
-            "expected_output_style": form.expected_output_style,
-            "expected_output_schema": FAMILY_DEFAULT_SPECS.get(form.family, {}).get("expected_output_schema", {}),
+        'target_spec': {
+            'role': FAMILY_DEFAULT_SPECS.get(family, {}).get('role', family.replace('_', ' ')),
+            'purpose': description,
+            'expected_output_style': expected_output_style,
+            'expected_output_schema': FAMILY_DEFAULT_SPECS.get(family, {}).get('expected_output_schema', {}),
         },
-        "settings": settings,
+        'settings': settings,
     }
 
 
