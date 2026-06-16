@@ -1,6 +1,6 @@
 from app.adapters.custom_api import CustomAPIAdapter
+from app.adapters.dify import DifyAdapter
 from app.adapters.flowise import FlowiseAdapter
-from app.adapters.langflow import LangflowAdapter
 
 from tests.helpers import make_target
 
@@ -28,10 +28,10 @@ def test_flowise_adapter_parses_fixture_response(monkeypatch):
     assert result["meta"]["flowise"]["execution_id"] == "exec-1"
 
 
-def test_langflow_adapter_parses_selected_json_output(monkeypatch):
+def test_dify_adapter_parses_strict_json_answer(monkeypatch):
     target = make_target(
-        kind="langflow",
-        platform="Langflow",
+        kind="dify",
+        platform="Dify",
         profile={"family": "analysis_pipeline", "domain": "community_feedback", "capabilities": [], "supports_tools": False},
         target_spec={
             "role": "analysis",
@@ -43,38 +43,27 @@ def test_langflow_adapter_parses_selected_json_output(monkeypatch):
             "challenge_suite": [],
         },
         settings={
-            "base_url": "https://example.com",
-            "flow_id": "flow-2",
-            "output_component": "Chat Output",
+            "base_url": "https://api.dify.example/v1",
+            "endpoint_path": "/chat-messages",
+            "api_key_env": "DIFY_API_KEY",
             "side_effects": "no",
         },
     )
-    adapter = LangflowAdapter(target)
+    adapter = DifyAdapter(target)
     monkeypatch.setattr(adapter, "request_json", lambda *args, **kwargs: ({
-        "outputs": [
-            {
-                "outputs": [
-                    {
-                        "component_display_name": "Chat Output",
-                        "results": {
-                            "message": {
-                                "sentiment": "Mixed",
-                                "summary": "Users like speed but exports fail.",
-                                "action_item": "Prioritize export reliability.",
-                                "confidence": "High",
-                                "evidence_note": "Cleaner dashboard and failing exports are both mentioned."
-                            }
-                        },
-                    }
-                ]
-            }
-        ]
+        "event": "message",
+        "task_id": "task-1",
+        "message_id": "message-1",
+        "conversation_id": "conversation-1",
+        "mode": "chat",
+        "answer": '{"sentiment":"Mixed","summary":"Users like speed but exports fail.","action_item":"Prioritize export reliability.","confidence":"High","evidence_note":"Both positive and negative evidence are mentioned."}',
+        "metadata": {"usage": {"total_tokens": 42}},
     }, 1))
     result = adapter.execute("prompt")
     assert result["ok"] is True
     assert "Mixed" in result["text"]
-    assert result["meta"]["langflow"]["candidate_count"] >= 1
-    assert result["meta"]["langflow"]["selected_path"]["component_label"] == "Chat Output"
+    assert result["meta"]["dify"]["candidate_count"] >= 1
+    assert result["meta"]["dify"]["conversation_id"] == "conversation-1"
 
 
 def test_custom_api_adapter_parses_text_candidate(monkeypatch):
@@ -107,18 +96,18 @@ def test_flowise_adapter_can_resolve_runtime_settings_from_env(monkeypatch):
     assert adapter.endpoint_url() == "https://flowise.example.com/api/v1/prediction/flow-env-1"
 
 
-def test_langflow_adapter_missing_config_mentions_env_vars():
+def test_dify_adapter_missing_config_mentions_env_vars():
     target = make_target(
-        kind="langflow",
-        platform="Langflow",
+        kind="dify",
+        platform="Dify",
         profile={"family": "analysis_pipeline", "domain": "community_feedback", "capabilities": [], "supports_tools": False},
         target_spec={"role": "analysis", "purpose": "feedback analysis", "expected_output_style": "json", "demo_suite": [], "full_suite": [], "challenge_suite": []},
-        settings={"base_url": "", "flow_id": "", "base_url_env": "LANGFLOW_BASE_URL", "flow_id_env": "LANGFLOW_FLOW_ID", "side_effects": "no"},
+        settings={"base_url": "", "endpoint_path": "/chat-messages", "base_url_env": "DIFY_BASE_URL", "api_key_env": "DIFY_API_KEY", "side_effects": "no"},
     )
-    status = LangflowAdapter(target).readiness()
+    status = DifyAdapter(target).readiness()
     assert status.code == "missing_config"
-    assert "LANGFLOW_BASE_URL" in status.detail
-    assert "LANGFLOW_FLOW_ID" in status.detail
+    assert "DIFY_BASE_URL" in status.detail
+    assert "DIFY_API_KEY" in status.detail
 
 
 def test_flowise_adapter_accepts_full_prediction_url_in_base_url():
@@ -138,3 +127,39 @@ def test_flowise_adapter_accepts_full_prediction_url_in_base_url():
     assert adapter.missing_settings() == []
     assert adapter.endpoint_url() == "https://cloud.flowiseai.com/api/v1/prediction/ac34cd2d-f5f8-4edb-8398-0e1345c0cf58"
     assert adapter.probe_url() == "https://cloud.flowiseai.com"
+
+
+def test_dify_adapter_prefers_nested_structured_output(monkeypatch):
+    target = make_target(
+        kind="dify",
+        platform="Dify",
+        profile={"family": "analysis_pipeline", "domain": "community_feedback", "capabilities": [], "supports_tools": False},
+        target_spec={
+            "role": "analysis",
+            "purpose": "feedback analysis",
+            "expected_output_style": "json",
+            "expected_output_schema": {"sentiment": "...", "summary": "...", "action_item": "..."},
+            "demo_suite": [],
+            "full_suite": [],
+            "challenge_suite": [],
+        },
+        settings={
+            "base_url": "https://api.dify.example/v1",
+            "endpoint_path": "/workflows/run",
+            "api_key_env": "DIFY_API_KEY",
+            "side_effects": "no",
+        },
+    )
+    adapter = DifyAdapter(target)
+    monkeypatch.setattr(adapter, "request_json", lambda *args, **kwargs: ({
+        "event": "workflow_finished",
+        "workflow_run": {
+            "outputs": {
+                "analysis": "```json\n{\"sentiment\":\"Mixed\",\"summary\":\"Search improved but exports fail.\",\"action_item\":\"Prioritize export fixes.\"}\n```"
+            }
+        },
+    }, 1))
+    result = adapter.execute("prompt")
+    assert result["ok"] is True
+    assert "Prioritize export fixes" in result["text"]
+    assert result["meta"]["dify"]["selection_reason"].startswith("configured_schema")

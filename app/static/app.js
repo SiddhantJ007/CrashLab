@@ -103,7 +103,7 @@ function renderTargetCard(target) {
   if (trust) trust.textContent = target.last_run?.trust_label || "No run yet";
   if (score) score.textContent = target.last_run?.score_display || "No run yet";
   if (suiteSource) suiteSource.textContent = target.plan_summary?.source || target.suite_source || "none";
-  if (summary) summary.textContent = target.last_run?.summary || summary.textContent || "No run yet.";
+  if (summary && summary.dataset.liveRun !== "true") summary.textContent = "No run yet.";
   if (modeSelect) {
     const modes = target.available_modes || ["demo"];
     const currentValue = modeSelect.value;
@@ -123,15 +123,11 @@ function summarizeRunMeta(runMeta) {
   if (runMeta.base_url) parts.push(`base ${runMeta.base_url}`);
   if (runMeta.flow_id) parts.push(`flow ${runMeta.flow_id}`);
   if (runMeta.endpoint_path) parts.push(`endpoint ${runMeta.endpoint_path}`);
-  if (runMeta.langflow_component) parts.push(`component ${runMeta.langflow_component}`);
-  if (runMeta.langflow_output_index !== undefined && runMeta.langflow_output_index !== null) {
-    const nested = runMeta.langflow_nested_index !== undefined && runMeta.langflow_nested_index !== null ? `.${runMeta.langflow_nested_index}` : "";
-    parts.push(`output ${runMeta.langflow_output_index}${nested}`);
-  }
-  if (runMeta.langflow_result_key) {
-    const field = runMeta.langflow_field_path ? `.${runMeta.langflow_field_path}` : "";
-    parts.push(`path ${runMeta.langflow_result_key}${field}`);
-  }
+  if (runMeta.analysis_conversation_id) parts.push(`conversation ${runMeta.analysis_conversation_id}`);
+  if (runMeta.analysis_message_id) parts.push(`message ${runMeta.analysis_message_id}`);
+  if (runMeta.analysis_task_id) parts.push(`task ${runMeta.analysis_task_id}`);
+  if (runMeta.analysis_response_mode) parts.push(`mode ${runMeta.analysis_response_mode}`);
+  if (runMeta.analysis_selection_reason) parts.push(`selection ${runMeta.analysis_selection_reason}`);
   if (runMeta.execution_id) parts.push(`execution ${runMeta.execution_id}`);
   if (runMeta.chat_id) parts.push(`chat ${runMeta.chat_id}`);
   if (runMeta.chat_message_id) parts.push(`message ${runMeta.chat_message_id}`);
@@ -290,7 +286,7 @@ async function pollRun() {
   const bar = document.getElementById(`bar-${run.target_id}`);
   if (bar) bar.style.width = `${Math.round((run.completed / Math.max(1, run.total)) * 100)}%`;
   const summary = document.getElementById(`summary-${run.target_id}`);
-  if (summary) summary.textContent = `${run.trust_label}: ${run.score_display}`;
+  if (summary) { summary.textContent = `${run.trust_label}: ${run.score_display}`; summary.dataset.liveRun = "true"; }
   const liveSummary = document.getElementById("live-summary");
   if (liveSummary) liveSummary.textContent = run.status === "complete" ? `${run.trust_label}: ${run.summary}` : `Progress ${run.completed}/${run.total}`;
   const liveMeta = document.getElementById("live-meta");
@@ -329,7 +325,7 @@ async function refreshCompare() {
   }
   if (!(data.failed_examples || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="3" class="muted">No trusted failed examples yet.</td>';
+    tr.innerHTML = '<td colspan="3" class="muted">No evaluated failures in the latest visible runs.</td>';
     tbody.appendChild(tr);
   }
 }

@@ -20,7 +20,7 @@ CrashLab is a single FastAPI application that evaluates API-accessible LLM workf
 ## Adapters
 CrashLab v1 exposes these public adapters:
 - Flowise
-- Langflow
+- Dify
 - Custom API
 
 Each adapter is responsible for:
@@ -46,7 +46,7 @@ CrashLab does not turn every run into a benchmark score.
 Execution failures, timeouts, and parse failures are surfaced as trust issues instead of being hidden behind a normal-looking score. Trusted comparison only includes complete runs with usable evaluated output.
 
 ## Public Demo Mode
-The public v1 release seeds sanitized historical sample runs when the local database is empty. This keeps the Render demo useful without bundling private endpoints, local databases, or deployed Flowise/Langflow instances.
+The public v1 release seeds sanitized historical sample runs when the local database is empty. This keeps the Render demo useful without bundling private endpoints, local databases, or deployed Flowise/Dify instances.
 
 Sample mode demonstrates:
 - target cards

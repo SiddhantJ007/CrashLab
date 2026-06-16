@@ -67,3 +67,4 @@ build/
 *.docx
 *.pdf
 CrashLab-public/
+langflow-service/

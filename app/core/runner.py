@@ -7,12 +7,25 @@ from collections import Counter
 
 from app.adapters.base import TargetExecutionError
 from app.core.evaluator import critical_failure_categories, evaluate_case, score_results
+from app.core.config import PLATFORM_SLOT_IDS
 from app.core.planner import resolve_suite_for_target, target_endpoint_label, target_runtime_config
 from app.core.store import get_run_record, init_db, latest_runs, save_run
 
 RUNS = {}
 LOCK = threading.Lock()
 LATEST = {}
+
+
+def _analysis_run_meta(meta):
+    if not isinstance(meta, dict):
+        return {}
+    for key in ('analysis_pipeline', 'dify', 'langflow'):
+        value = meta.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
 
 
 # start_run captures the selected suite up front so every later export can prove whether the
@@ -150,16 +163,20 @@ def _worker(run_id, adapter):
                     "last_agent_flow_summary": meta["flowise"].get("agent_flow_summary", {}),
                 }
             )
-        elif meta.get("langflow"):
-            run["run_meta"].update(
-                {
-                    "selected_output": meta["langflow"].get("selected_output", {}),
-                    "parsed_json": meta["langflow"].get("parsed_json", {}),
-                    "candidate_count": meta["langflow"].get("candidate_count"),
-                    "selected_path": meta["langflow"].get("selected_path", {}),
-                    "selection_ambiguous": meta["langflow"].get("selection_ambiguous", False),
-                }
-            )
+        else:
+            analysis_meta = _analysis_run_meta(meta)
+            if analysis_meta:
+                run["run_meta"].update(
+                    {
+                        "parsed_json": analysis_meta.get("parsed_json", {}),
+                        "candidate_count": analysis_meta.get("candidate_count"),
+                        "selection_reason": analysis_meta.get("selection_reason") or analysis_meta.get("reason"),
+                        "conversation_id": analysis_meta.get("conversation_id"),
+                        "message_id": analysis_meta.get("message_id"),
+                        "task_id": analysis_meta.get("task_id"),
+                        "response_mode": analysis_meta.get("mode"),
+                    }
+                )
         run["completed"] = index
         if result_status == "evaluated":
             _log(run, f"{'PASS' if passed else 'FAIL'} - {notes}")
@@ -186,11 +203,19 @@ def get_run(run_id):
 
 def history_runs():
     runs = []
+    public_target_ids = set(PLATFORM_SLOT_IDS.values())
+    visible_kinds = {"flowise", "dify"}
     for run in latest_runs():
-        if run.get("target_kind") == "webarena":
+        if run.get("target_kind") not in visible_kinds:
+            continue
+        if run.get("target_id") not in public_target_ids:
             continue
         full_run = get_run_record(run["run_id"]) or run
-        if full_run.get("target_kind") == "webarena":
+        if full_run.get("target_kind") not in visible_kinds:
+            continue
+        if full_run.get("target_id") not in public_target_ids:
+            continue
+        if (full_run.get("target_source") == "sample_seed_public") or full_run.get("run_meta", {}).get("sample_seed"):
             continue
         runs.append(decorate_run(full_run))
     return runs
@@ -198,26 +223,48 @@ def history_runs():
 
 def compare_latest():
     runs = history_runs()
-    scores = {}
+    latest_by_target = {}
+    for run in runs:
+        latest_by_target.setdefault(run["target_id"], run)
+
+    latest_runs_only = list(latest_by_target.values())
+    scores = {run["target_id"]: run.get("score") for run in latest_runs_only if run.get("score") is not None}
     failed_examples = []
     cat_counter = Counter()
-    for run in runs:
-        if not run.get("trusted"):
-            continue
-        if run["target_id"] not in scores and run.get("score") is not None:
-            scores[run["target_id"]] = run["score"]
-            for case in run["results"]:
-                if case.get("result_status") == "evaluated" and not case["passed"]:
-                    failed_examples.append({"target": run["target_name"], "category": case["category"], "prompt": case["prompt"]})
-                    cat_counter[case["category"]] += 1
-    highest_risk = None
-    if scores:
-        lowest = min(scores, key=scores.get)
-        latest = next((run for run in runs if run["target_id"] == lowest and run.get("trusted")), None)
-        if latest:
-            highest_risk = latest["target_name"]
+    for run in latest_runs_only:
+        for case in run.get("results", []):
+            if case.get("result_status") == "evaluated" and case.get("passed") is False:
+                failed_examples.append({"target": run["target_name"], "category": case["category"], "prompt": case["prompt"]})
+                cat_counter[case["category"]] += 1
+
+    severity_rank = {
+        "execution_failed": 5,
+        "parse_failed": 4,
+        "execution_unstable": 3,
+        "unsafe_ungrounded": 2,
+        "needs_review": 1,
+        "trusted": 0,
+    }
+
+    highest_risk_run = None
+    if latest_runs_only:
+        highest_risk_run = sorted(
+            latest_runs_only,
+            key=lambda run: (
+                -severity_rank.get(run.get("outcome"), -1),
+                run.get("score") if run.get("score") is not None else 101,
+                run.get("created_at", 0) * -1,
+            ),
+        )[0]
+
     top_issue = cat_counter.most_common(1)[0][0] if cat_counter else None
-    return {"scores": scores, "highest_risk_target": highest_risk, "top_issue": top_issue, "failed_examples": failed_examples[:8]}
+    return {
+        "scores": scores,
+        "highest_risk_target": highest_risk_run["target_name"] if highest_risk_run else None,
+        "highest_risk_outcome": highest_risk_run.get("trust_label") if highest_risk_run else None,
+        "top_issue": top_issue,
+        "failed_examples": failed_examples[:8],
+    }
 
 
 def decorate_run(run):
@@ -349,20 +396,30 @@ def select_run_metadata(run):
         "endpoint_path": run_meta.get("endpoint_path"),
         "side_effects": run_meta.get("side_effects"),
     }
+    if run_meta.get("parsed_json") is not None and any(key in run_meta for key in ("message_id", "conversation_id", "task_id", "selection_reason", "candidate_count")):
+        parsed_json = run_meta.get("parsed_json", {})
+        return {
+            **base,
+            "analysis_message_id": run_meta.get("message_id"),
+            "analysis_conversation_id": run_meta.get("conversation_id"),
+            "analysis_task_id": run_meta.get("task_id"),
+            "analysis_response_mode": run_meta.get("response_mode"),
+            "analysis_selection_reason": run_meta.get("selection_reason"),
+            "analysis_candidate_count": run_meta.get("candidate_count"),
+            "parsed_keys": list(parsed_json.keys())[:10] if isinstance(parsed_json, dict) else [],
+        }
     if run_meta.get("selected_output") is not None:
         selected = run_meta.get("selected_output", {})
         parsed_json = run_meta.get("parsed_json", {})
         selected_path = run_meta.get("selected_path", {})
         return {
             **base,
-            "langflow_output_index": selected_path.get("output_index", selected.get("chosen_descriptor", {}).get("output_index")),
-            "langflow_nested_index": selected_path.get("nested_index", selected.get("chosen_descriptor", {}).get("nested_index")),
-            "langflow_result_key": selected_path.get("result_key", selected.get("chosen_descriptor", {}).get("result_key")),
-            "langflow_field_path": selected_path.get("field_path"),
-            "langflow_component": selected_path.get("component_label") or selected_path.get("component_id"),
-            "langflow_selection_reason": selected.get("reason"),
-            "langflow_candidate_count": run_meta.get("candidate_count"),
-            "langflow_selection_ambiguous": run_meta.get("selection_ambiguous", False),
+            "analysis_message_id": run_meta.get("message_id"),
+            "analysis_conversation_id": run_meta.get("conversation_id"),
+            "analysis_task_id": run_meta.get("task_id"),
+            "analysis_response_mode": run_meta.get("response_mode"),
+            "analysis_selection_reason": selected.get("reason"),
+            "analysis_candidate_count": run_meta.get("candidate_count"),
             "parsed_keys": list(parsed_json.keys())[:10] if isinstance(parsed_json, dict) else [],
         }
     summary = run_meta.get("last_agent_flow_summary", {})
@@ -416,10 +473,8 @@ def build_run_export(run_id):
 def build_case_export(case):
     meta = case.get("meta", {})
     flowise = meta.get("flowise", {})
-    langflow = meta.get("langflow", {})
-    langflow_parsed = langflow.get("parsed_json", {}) if isinstance(langflow, dict) else {}
-    selected = langflow.get("selected_output", {}) if isinstance(langflow, dict) else {}
-    selected_path = langflow.get("selected_path", {}) if isinstance(langflow, dict) else {}
+    analysis = _analysis_run_meta(meta)
+    analysis_parsed = analysis.get("parsed_json", {}) if isinstance(analysis, dict) else {}
     return {
         "case_id": case.get("case_id"),
         "category": case.get("category"),
@@ -437,14 +492,13 @@ def build_case_export(case):
         "session_id": flowise.get("session_id"),
         "step_count": flowise.get("agent_flow_summary", {}).get("step_count"),
         "tool_like_steps": flowise.get("agent_flow_summary", {}).get("tool_like_steps"),
-        "langflow_output_index": selected_path.get("output_index", selected.get("chosen_descriptor", {}).get("output_index")),
-        "langflow_nested_index": selected_path.get("nested_index", selected.get("chosen_descriptor", {}).get("nested_index")),
-        "langflow_result_key": selected_path.get("result_key", selected.get("chosen_descriptor", {}).get("result_key")),
-        "langflow_field_path": selected_path.get("field_path"),
-        "langflow_component": selected_path.get("component_label") or selected_path.get("component_id"),
-        "langflow_selection_reason": selected.get("reason"),
-        "langflow_selection_ambiguous": langflow.get("selection_ambiguous", False),
-        "langflow_parsed_keys": list(langflow_parsed.keys())[:10] if isinstance(langflow_parsed, dict) else [],
+        "analysis_message_id": analysis.get("message_id"),
+        "analysis_conversation_id": analysis.get("conversation_id"),
+        "analysis_task_id": analysis.get("task_id"),
+        "analysis_response_mode": analysis.get("mode"),
+        "analysis_selection_reason": analysis.get("selection_reason") or analysis.get("reason"),
+        "analysis_candidate_count": analysis.get("candidate_count"),
+        "analysis_parsed_keys": list(analysis_parsed.keys())[:10] if isinstance(analysis_parsed, dict) else [],
     }
 
 
@@ -486,14 +540,13 @@ def build_run_csv(run_id):
             "session_id",
             "step_count",
             "tool_like_steps",
-            "langflow_output_index",
-            "langflow_nested_index",
-            "langflow_result_key",
-            "langflow_field_path",
-            "langflow_component",
-            "langflow_selection_reason",
-            "langflow_selection_ambiguous",
-            "langflow_parsed_keys",
+            "analysis_message_id",
+            "analysis_conversation_id",
+            "analysis_task_id",
+            "analysis_response_mode",
+            "analysis_selection_reason",
+            "analysis_candidate_count",
+            "analysis_parsed_keys",
         ],
     )
     writer.writeheader()
