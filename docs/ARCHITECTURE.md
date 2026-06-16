@@ -1,59 +1,89 @@
-# CrashLab Architecture
+# Architecture
 
-CrashLab is a single FastAPI application that evaluates API-accessible LLM workflows through a target-aware pipeline.
+CrashLab v1.1 is a single FastAPI application with a target-aware evaluation pipeline.
 
-## Evaluation Flow
-1. Load sanitized bootstrap targets from `targets.json`.
-2. Merge dashboard-created targets from SQLite.
-3. Resolve the active suite source for the selected mode.
-   - approved generated plan
-   - explicit target spec
-   - default family template
-   - block `custom_or_unknown` without a reviewed plan
-4. Execute each case through the platform adapter.
-5. Parse output conservatively.
-6. Route the case through a family-aware evaluator.
+## High-Level Flow
+1. Load bootstrap targets from `targets.json`.
+2. Merge hosted or local configured targets from the persistence layer.
+3. Resolve a suite source for the requested mode.
+4. Execute cases through the appropriate platform adapter.
+5. Parse outputs conservatively.
+6. Run family-specific evaluation logic.
 7. Aggregate weighted results.
 8. Assign a trust label.
-9. Export Markdown, JSON, or CSV.
+9. Persist the run and export evidence.
 
-## Adapters
-CrashLab v1 exposes these public adapters:
+## Main Components
+### FastAPI application
+The web server exposes:
+- dashboard UI
+- target listing
+- target onboarding/configuration
+- run execution
+- suite preview
+- plan generation
+- probe endpoint
+- report export endpoints
+
+### Adapter layer
+Public v1.1 adapters:
 - Flowise
 - Dify
 - Custom API
 
-Each adapter is responsible for:
-- runtime request formatting
-- endpoint execution
-- response parsing
+Adapter responsibilities:
+- runtime URL construction
+- request formatting
+- timeout handling
+- output extraction
+- parse failure surfacing
 - metadata capture
-- explicit parse failure reporting when output is unusable
 
-## Families
-The family system keeps evaluation tied to the target’s intended job:
+### Test-case layer
+CrashLab stores reusable family templates and target-specific suites.
+
+Inputs include:
+- `case_id`
+- `category`
+- `prompt`
+- `expected_behavior`
+- `failure_conditions`
+- `success_label`
+- `failure_label`
+- `risk_weight`
+
+### Planner / intelligence layer
+The planner can:
+- use explicit target specs
+- fall back to family templates
+- generate target-specific plans with OpenAI if configured
+- incorporate optional probe summaries
+
+### Evaluator
+The evaluator is family-aware.
+
+Current families:
 - `agent_orchestrator`
 - `analysis_pipeline`
 - `rag_assistant`
 - `general_chatbot`
 - `custom_or_unknown`
 
-This prevents a workflow orchestrator from being graded like a generic chatbot, or a schema-driven analysis pipeline from being treated like open-ended chat.
+### Persistence
+CrashLab now uses:
+- Supabase first when configured
+- SQLite fallback locally
 
-## Trust Model
-CrashLab does not turn every run into a benchmark score.
+Persisted entities:
+- configured targets
+- test plans
+- probe summaries
+- runs
+- case results
 
-Execution failures, timeouts, and parse failures are surfaced as trust issues instead of being hidden behind a normal-looking score. Trusted comparison only includes complete runs with usable evaluated output.
-
-## Public Demo Mode
-The public v1 release seeds sanitized historical sample runs when the local database is empty. This keeps the Render demo useful without bundling private endpoints, local databases, or deployed Flowise/Dify instances.
-
-Sample mode demonstrates:
-- target cards
-- suite preview
-- run history
-- weighted scoring
-- trust labels
-- report export
-
-Fresh live runs still require a user-configured external target.
+## Why This Architecture
+This structure keeps the core app reusable:
+- adapters isolate platform-specific behavior
+- family templates isolate evaluation intent
+- the planner isolates test-plan generation
+- the store layer isolates hosted vs local persistence

@@ -1,321 +1,206 @@
-# CrashLab v1
+# CrashLab v1.1
+
+LLM workflow evaluation platform for testing Flowise, Dify, and compatible API-accessible AI agents across failure families such as unsafe shortcuts, hallucination risk, prompt injection, parse failures, schema drift, weak evidence handling, and execution instability.
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-app-009688?logo=fastapi&logoColor=white)
 ![Render Ready](https://img.shields.io/badge/Render-ready-46E3B7?logo=render&logoColor=111111)
-![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-compile%20%2B%20tests-2088FF?logo=githubactions&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-persistence-3ECF8E?logo=supabase&logoColor=white)
 
-LLM workflow reliability lab for testing Flowise, Dify, and custom API agents across failure families like prompt injection, hallucination, schema drift, parse failures, and unstable execution.
+CrashLab is a target-aware evaluation lab for API-accessible LLM workflows. It executes structured test suites against configured targets, scores observable behavior, assigns conservative trust labels, and exports evidence in Markdown, JSON, and CSV.
 
-CrashLab is a target-aware evaluation platform for API-accessible LLM workflows. It runs structured test suites against configured Flowise, Dify, and compatible custom API targets, then turns observable behavior into trust labels, weighted scores, and exportable reports.
-
-This public v1 release is intentionally small and safe to ship:
-- one FastAPI app
-- no bundled Flowise or Dify server
-- no WebArena in the public UI
-- no private endpoints, API keys, or local databases committed
-- a self-contained sample mode so the dashboard is still meaningful on a fresh deploy
+This is a working MVP and recruiter-facing demo, not a full enterprise platform.
 
 ## Live Demo
-- Live Demo: coming after Render deployment
-- GitHub Actions: compile check + pytest suite via `.github/workflows/ci.yml`
+- Live demo: [CrashLab on Render](https://crashlab.onrender.com)
 
-## Problem It Solves
-LLM workflows are easy to demo and hard to evaluate repeatably. A few manual prompts do not reveal whether a target:
-- follows the expected output schema
-- resists prompt injection or unsafe shortcuts
-- stays grounded in source evidence
-- fails cleanly when parsing or execution breaks
-- produces results that are trustworthy enough to compare over time
+### Screenshots
+![Dashboard](docs/assets/dashboard.png)
+![Suite Preview](docs/assets/suite-preview.png)
+![Add Custom Target](docs/assets/custom-target.png)
+![Live Run](docs/assets/live-run.png)
+![Report Export](docs/assets/report-export.png)
 
-CrashLab addresses that by making the evaluation target-aware instead of treating every workflow like a generic chatbot.
+## What Problem It Solves
+LLM workflows are easy to demo and difficult to test repeatably. A handful of manual prompts does not reliably answer:
+- Does the workflow stay within its intended scope?
+- Does it resist prompt injection or unsafe user overrides?
+- Does it remain grounded in the provided evidence or context?
+- Does it fail clearly when parsing or execution breaks?
+- Can two targets be compared using the same family-appropriate evaluation standard?
 
-## What CrashLab v1 Does
-CrashLab v1 supports:
-- target onboarding from the dashboard
-- adapter-based execution for Flowise, Dify, and Custom API targets
-- family-based suite selection for `agent_orchestrator`, `analysis_pipeline`, `rag_assistant`, `general_chatbot`, and `custom_or_unknown`
-- explicit target specs when a target needs a more specific suite than the family default
-- generated or adapted test plans stored in SQLite
-- optional probe-assisted profiling for a lightweight output-shape check
-- weighted scoring and conservative trust labels
-- Markdown, JSON, and CSV exports
-- a public-safe sample history mode for recruiter demos
+CrashLab addresses that by making evaluation target-aware rather than treating every workflow like a generic chatbot.
 
-## Recruiter Demo Script
-1. Open the dashboard.
-2. View the sample Flowise and Dify targets.
-3. Preview a family-specific suite from a target card.
-4. Inspect the sample run history.
-5. Open a run and review the trust label and weighted score.
-6. Export the Markdown, JSON, or CSV report.
-7. Add a live Flowise, Dify, or Custom API target from the dashboard for real external evaluation.
+## Current Scope
+CrashLab v1.1 currently supports:
+- Flowise targets
+- Dify targets
+- Custom API targets through the shared adapter path
+- Static bootstrap targets from `targets.json`
+- Dynamic targets added from the dashboard
+- Family-based test suite selection
+- Optional OpenAI-assisted target analysis and test-plan generation
+- Optional probe-assisted target profiling
+- Supabase-backed hosted persistence
+- SQLite local fallback for development
+- Markdown, JSON, and CSV report export
 
-## Demo Mode vs Live Target Mode
-### Demo mode
-- uses seeded sanitized historical runs
-- works on a fresh deploy without any external workflow configured
-- demonstrates target cards, suite preview, trust labels, weighted scoring, run history, and exports
+## Supported Target Families
+- `agent_orchestrator`
+- `analysis_pipeline`
+- `rag_assistant`
+- `general_chatbot`
+- `custom_or_unknown`
 
-### Live target mode
-- requires a user-provided endpoint or flow ID
-- requires any needed API key environment variable to be configured by the user
-- runs real external evaluations through the adapter layer
+## Supported Integrations
+### Flowise
+Used for orchestration-style or workflow-control targets.
 
-CrashLab does not fabricate fresh live evaluations when no real external target is configured.
+### Dify
+Used as the second hosted v1.1 platform after Langflow was deferred for deployment/runtime reasons.
 
-## Supported Adapters
-CrashLab v1 currently exposes these adapters in the public product flow:
-- `Flowise`
-- `Dify`
-- `Custom API`
+### Custom API
+Allows evaluation of compatible API-accessible workflows using the same general target model.
 
-WebArena code may remain in the repository for private experiments, but it is hidden from the public UI and not part of the shipped v1 workflow.
-
-## Supported Evaluation Families
-### `agent_orchestrator`
-Used for supervisor or routing workflows.
-
-Typical checks:
-- relevant routing
-- code-review workflow structure
-- ambiguity handling
-- unsafe shortcut resistance
-- conflicting evidence handling
-- loop safety
-
-### `analysis_pipeline`
-Used for structured analysis workflows such as feedback analysis.
-
-Typical checks:
-- schema correctness
-- sentiment and summary quality
-- weak-evidence handling
-- injection resistance
-- grounded recommendations
-
-### `rag_assistant`
-Used for retrieval-grounded assistants.
-
-Typical checks:
-- grounded answer behavior
-- no-context refusal
-- retrieved-text injection resistance
-- conflicting context handling
-- context-boundary behavior
-
-### `general_chatbot`
-Used for generic assistant-style targets.
-
-Typical checks:
-- instruction following
-- off-scope handling
-- hallucination risk
-- format consistency
-- refusal behavior
-
-### `custom_or_unknown`
-Used when a workflow does not fit the families above. CrashLab blocks evaluation until a reviewed plan exists.
-
-## Architecture Overview
-The evaluation pipeline is:
-
-1. Configure or load a target
-2. Resolve the suite source
+## How CrashLab Works
+1. Load bootstrap targets from `targets.json`.
+2. Merge dynamic targets from persisted storage.
+3. Resolve a suite source in this priority order:
    - approved generated plan
    - explicit target spec
    - default family template
-   - block `custom_or_unknown` without a plan
-3. Execute each case through the target adapter
-4. Parse the observable response conservatively
-5. Route the case through a family-aware evaluator
-6. Aggregate weighted results into a run score
-7. Assign a trust label
-8. Export Markdown, JSON, or CSV evidence
-
-A concise architecture note is also available in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## How Evaluations Work
-Each case includes:
-- `case_id`
-- `category`
-- `prompt`
-- `expected_behavior`
-- `failure_conditions`
-- `success_label`
-- `failure_label`
-- `risk_weight`
-
-CrashLab sends the prompt to the real target API, captures observable output and metadata, then evaluates the case using logic appropriate to the selected family.
-
-Two design choices matter:
-- parse failures and execution failures are not converted into normal benchmark scores
-- trusted comparison only uses runs with complete usable evaluated output
+   - block `custom_or_unknown` without a reviewed plan
+4. Execute each case against the real target adapter.
+5. Parse the response conservatively.
+6. Evaluate the result using family-specific logic.
+7. Aggregate weighted case scores.
+8. Assign a trust label.
+9. Store the run and export evidence.
 
 ## Trust Labels
-CrashLab uses conservative trust labels:
-- `Trusted`: all required cases produced usable evaluated output and no critical safety failure occurred
-- `Needs Review`: the run completed but output quality was mixed
-- `Parse Failed`: the target responded but the output did not match the expected parse or schema path
-- `Execution Failed`: the workflow or upstream provider failed before evaluation completed
-- `Execution Unstable`: timeouts or partial execution prevented a complete run
-- `Unsafe / Ungrounded`: the run completed but failed a critical safety or grounding check
+CrashLab uses conservative labels instead of forcing every run into a benchmark number:
+- `Trusted`
+- `Needs Review`
+- `Parse Failed`
+- `Execution Failed`
+- `Execution Unstable`
+- `Unsafe / Ungrounded`
 
-## Reports and Outputs
-CrashLab can export:
-- Markdown summary
-- JSON run payload
-- CSV case table
+## Persistence Model
+CrashLab started with SQLite as a lightweight MVP store.
 
-The exports include:
-- target metadata
-- suite source
-- trust label
-- weighted score when trustworthy
-- case-level results
-- selected execution metadata
-- recommended fixes derived from failure categories
+That worked locally, but it was not reliable for hosted persistence on Render free because local filesystem writes are not durable across restarts/cold starts. To solve that, v1.1 adds Supabase Postgres as the primary hosted persistence layer.
 
-## Public Safety
-- no API keys are included in the repo
-- no WebArena dataset or environment is part of the public product flow
-- no private live target configuration is bundled in `targets.json`
-- local databases, reports, generated exports, screenshots, and virtual environments are ignored via `.gitignore`
+Current persistence behavior:
+- Supabase first when configured
+- SQLite fallback for local development and simple local testing
 
-## Demo Modes in This Public Release
-### Self-contained sample mode
-A fresh public deployment seeds sanitized historical sample runs for the built-in Flowise and Dify example targets.
+## Deployment Summary
+### Why not Vercel?
+Vercel’s serverless filesystem model is a poor fit for writable local SQLite persistence.
 
-This gives you:
-- target cards
-- suite preview
-- run history
-- trust labels
-- weighted scores
-- export buttons
+### Why Render?
+Render was a better fit for a single FastAPI app deployment, but Render free still does not provide dependable persistent local storage for this use case.
 
-These sample runs are clearly historical demo evidence, not fresh live evaluations.
+### Why Supabase?
+Supabase provides a low-friction hosted Postgres backend that preserves:
+- targets
+- runs
+- case results
+- generated plans
+- probe summaries
 
-### Optional live external target mode
-To run a fresh evaluation, add or edit a target in the dashboard and provide a real external endpoint.
+## Environment Variables
+Use environment variables only. Do not hardcode API keys in client-side code.
 
-CrashLab v1 does not bundle or deploy:
-- Flowise itself
-- Dify itself
-- WebArena
+Required or commonly used variables:
+```env
+FLOWISE_API_KEY=...
+FLOWISE_BASE_URL=...
+FLOWISE_FLOW_ID=...
 
-Those systems should be treated as optional external targets.
+DIFY_API_KEY=...
+DIFY_BASE_URL=https://api.dify.ai/v1
+
+OPENAI_API_KEY=optional_for_target_analysis_layer
+
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_SCHEMA=public
+
+CRASHLAB_DB_PATH=app/data/crashlab.db
+CRASHLAB_LOAD_DOTENV=1
+CRASHLAB_SEED_SAMPLE_DATA=0
+```
+
+See `.env.sample` for placeholders.
 
 ## Local Run
-Create and activate a virtual environment, then install dependencies:
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Start CrashLab:
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`.
-
-## Render Deployment
-CrashLab v1 is designed to run as a single FastAPI app on Render.
-
-### Start command
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port $PORT
-```
-
-### Recommended environment variables
-Use placeholder values only until you intentionally connect live targets:
-
-```bash
-FLOWISE_API_KEY=your_flowise_key_here
-FLOWISE_BASE_URL=https://your-flowise-host.example.com
-FLOWISE_FLOW_ID=your-flowise-flow-id
-DIFY_API_KEY=your_dify_api_key_here
-DIFY_BASE_URL=https://api.dify.ai/v1
-OPENAI_API_KEY=optional_for_planner
-CRASHLAB_LOAD_DOTENV=0
-CRASHLAB_SEED_SAMPLE_DATA=1
-CRASHLAB_DB_PATH=app/data/crashlab.db
-```
-
-### Persistent vs ephemeral storage
-Ephemeral mode:
-- simplest option for a recruiter demo
-- sample runs are reseeded on each cold deploy if the DB is empty
-
-Persistent disk mode:
-- recommended if you want onboarded targets and run history to survive restarts
-- point `CRASHLAB_DB_PATH` at the mounted disk path
-
-## Public-Safe Bootstrap Config
-- `targets.json` ships with sanitized example targets and no live private endpoints
-- `targets.example.json` shows the fake values expected for Flowise and Dify
-- real target credentials should be provided through environment variables and the dashboard, not committed to git
-
 ## Testing
-Run the local checks:
-
 ```bash
-python -m compileall app
+python3 -m compileall app
 ./.venv/bin/python -m pytest -q
 ```
 
-The included test suite covers:
-- suite resolution priority
-- evaluator trust-label edge cases
-- adapter parsing fixtures
-- FastAPI smoke routes
+## Key Engineering Decisions
+- FastAPI monolith instead of split frontend/backend for v1 speed
+- Target-family evaluation instead of one generic scoring rubric
+- Conservative trust labels instead of misleading scores on parse/execution failure
+- Render deployment for the web app
+- Supabase persistence for hosted state
+- Langflow deferred; Dify selected as the second platform for v1.1
 
-## Tech Stack
-- FastAPI
-- Jinja2 templates
-- vanilla JavaScript
-- SQLite
-- httpx
-- Pydantic
-- pytest
-- GitHub Actions
+## Security Notes
+- Keep Flowise, Dify, OpenAI, and Supabase credentials server-side only.
+- Do not expose service role keys in client-side JavaScript.
+- Dynamic target URLs introduce SSRF-style risk if not constrained.
+- Multi-user auth and row-level security are future improvements, not completed v1.1 features.
 
-## What This Project Proves
-CrashLab is intended to show practical AI reliability thinking, not just prompt demos. The repo demonstrates:
-- adapter-based integration with LLM workflow platforms
-- repeatable evaluation datasets for AI workflows
-- failure analysis for parse, schema, grounding, and safety issues
-- conservative reporting that refuses to overclaim trust
-- product thinking around onboarding, reporting, and demo-safe deployment
+## What This Project Demonstrates
+CrashLab is meant to show:
+- structured AI evaluation thinking
+- adapter-based integration design
+- platform deployment tradeoff analysis
+- hosted persistence migration under real constraints
+- pragmatic productization of LLM reliability tooling
 
-## Limitations
-CrashLab v1 does not claim universal testing for arbitrary public agents.
-
-Current limits:
-- evaluation quality depends on the selected target family and expected output style
-- black-box and gray-box only unless the target exposes richer metadata
-- generated test plans still benefit from human review
-- built-in evaluators are strongest for the currently exercised Flowise and Dify patterns
-- live external targets are optional and must be configured separately
-
-## v2 Roadmap
-Intentionally deferred from this public v1 release:
-- deeper graph introspection for Flowise and Dify
-- stronger plan generation and review workflows
-- target edit/delete management polish
-- richer regression tracking across workflow versions
-- CI-triggered recurring evaluation jobs
-- broader adapter coverage
+## Documentation Index
+- [docs/VISION.md](docs/VISION.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/TARGET_INTEGRATIONS.md](docs/TARGET_INTEGRATIONS.md)
+- [docs/INTELLIGENCE_LAYER.md](docs/INTELLIGENCE_LAYER.md)
+- [docs/TEST_CASE_FAMILIES.md](docs/TEST_CASE_FAMILIES.md)
+- [docs/EVALUATION_METHODOLOGY.md](docs/EVALUATION_METHODOLOGY.md)
+- [docs/DATABASE_PERSISTENCE.md](docs/DATABASE_PERSISTENCE.md)
+- [docs/SUPABASE_MIGRATION.md](docs/SUPABASE_MIGRATION.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- [docs/CI_CD.md](docs/CI_CD.md)
+- [docs/ENGINEERING_DECISIONS.md](docs/ENGINEERING_DECISIONS.md)
+- [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md)
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- [docs/ROADMAP.md](docs/ROADMAP.md)
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## What I Learned
-Building CrashLab changed the framing from “can this workflow answer a prompt?” to “can this workflow be trusted for its intended job?” The most important outcome was not a single score, but a reliable distinction between:
-- valid evaluated output
-- parse or schema failures
-- execution failures
-- unsafe but fluent responses
+- deployment constraints shape product architecture as much as model behavior does
+- persistence choices matter early for any evaluation product with shared run history
+- family-aware evaluation is much more defensible than generic chatbot scoring
+- conservative trust labeling is better than presenting false precision
 
-That distinction is what makes the reports defensible.
+## Future Improvements
+- multi-user auth and row-level access controls
+- stronger SSRF protections around dynamic targets
+- richer Dify and Flowise metadata ingestion
+- Langflow reintroduction if hosted deployment becomes practical
+- additional platforms beyond Flowise and Dify
+- CI-driven regression runs across target versions
