@@ -4,16 +4,72 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import quote
+
+import httpx
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "crashlab.db"
 DB = Path(os.getenv("CRASHLAB_DB_PATH", str(DEFAULT_DB))).expanduser().resolve()
 DB.parent.mkdir(parents=True, exist_ok=True)
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
+SUPABASE_SCHEMA = os.getenv("SUPABASE_SCHEMA", "public")
+SUPABASE_RUNS_TABLE = os.getenv("CRASHLAB_SUPABASE_RUNS_TABLE", "crashlab_runs")
+SUPABASE_CASES_TABLE = os.getenv("CRASHLAB_SUPABASE_CASES_TABLE", "crashlab_cases")
+SUPABASE_TARGETS_TABLE = os.getenv("CRASHLAB_SUPABASE_TARGETS_TABLE", "crashlab_configured_targets")
+SUPABASE_PLANS_TABLE = os.getenv("CRASHLAB_SUPABASE_PLANS_TABLE", "crashlab_test_plans")
+SUPABASE_PROBES_TABLE = os.getenv("CRASHLAB_SUPABASE_PROBES_TABLE", "crashlab_target_probes")
 
+
+# SQLite remains the zero-config local fallback. Render or any hosted deployment can switch
+# to Supabase by setting SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
 def conn():
     connection = sqlite3.connect(DB)
     connection.row_factory = sqlite3.Row
     return connection
+
+
+def supabase_enabled() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def _supabase_headers(prefer: Optional[str] = None, object_mode: bool = False) -> Dict[str, str]:
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Accept-Profile": SUPABASE_SCHEMA,
+        "Content-Profile": SUPABASE_SCHEMA,
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    if object_mode:
+        headers["Accept"] = "application/vnd.pgrst.object+json"
+    return headers
+
+
+def _supabase_url(table: str) -> str:
+    return f"{SUPABASE_URL}/rest/v1/{table}"
+
+
+def _supabase_request(method: str, table: str, *, params: Optional[Dict] = None, json_body=None, prefer: Optional[str] = None, object_mode: bool = False):
+    with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+        response = client.request(
+            method,
+            _supabase_url(table),
+            headers=_supabase_headers(prefer=prefer, object_mode=object_mode),
+            params=params,
+            json=json_body,
+        )
+    response.raise_for_status()
+    if not response.text.strip():
+        return None
+    return response.json()
+
+
+def _warn_supabase_failure(action: str, exc: Exception):
+    print(f"[CrashLab] Supabase {action} failed; falling back to SQLite: {exc}")
 
 
 def init_db():
@@ -90,8 +146,8 @@ def init_db():
     connection.close()
 
 
-# SQLite is used as the local system-of-record for configured targets, generated plans,
-# probe summaries, and run history so the dashboard and exports share the same evidence.
+# SQLite is used as the local fallback system-of-record so local development and tests work
+# without cloud infrastructure. Hosted deployments can transparently swap to Supabase.
 def _ensure_column(connection, table, column, column_type):
     columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
@@ -100,15 +156,19 @@ def _ensure_column(connection, table, column, column_type):
 
 def has_any_runs() -> bool:
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request("GET", SUPABASE_RUNS_TABLE, params={"select": "run_id", "limit": 1}) or []
+            return bool(rows)
+        except Exception as exc:
+            _warn_supabase_failure("has_any_runs", exc)
     connection = conn()
     row = connection.execute("SELECT 1 FROM runs LIMIT 1").fetchone()
     connection.close()
     return bool(row)
 
 
-# Runs and case rows are persisted so the dashboard, compare view, and exports all read
-# the same trustworthy ground truth even after a server restart.
-def save_run(run):
+def _sqlite_save_run(run):
     connection = conn()
     connection.execute("DELETE FROM cases WHERE run_id = ?", (run["run_id"],))
     connection.execute(
@@ -153,9 +213,61 @@ def save_run(run):
     connection.close()
 
 
-# Configured targets are stored separately from bootstrap JSON so the app can ship with
-# known-good examples while still letting a user onboard new targets from the UI.
-def save_configured_target(target_payload: Dict):
+# Runs and case rows are persisted so the dashboard, compare view, and exports all read
+# the same ground truth even after a server restart. Supabase enables shared persistence.
+def save_run(run):
+    if supabase_enabled():
+        try:
+            _supabase_request(
+                "POST",
+                SUPABASE_RUNS_TABLE,
+                json_body={
+                    "run_id": run["run_id"],
+                    "target_id": run["target_id"],
+                    "target_name": run["target_name"],
+                    "target_kind": run.get("target_kind"),
+                    "target_profile": run.get("target_profile", {}),
+                    "target_spec": run.get("target_spec", {}),
+                    "status": run["status"],
+                    "run_mode": run.get("run_mode", "demo"),
+                    "created_at": run["created_at"],
+                    "completed_at": run.get("completed_at"),
+                    "score": run.get("score"),
+                    "outcome": run.get("outcome"),
+                    "summary": run.get("summary", ""),
+                    "run_meta": run.get("run_meta", {}),
+                    "category_scores": run.get("category_scores", {}),
+                    "logs": run.get("logs", []),
+                },
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            _supabase_request("DELETE", SUPABASE_CASES_TABLE, params={"run_id": f"eq.{run['run_id']}"})
+            cases = []
+            for result in run.get("results", []):
+                cases.append(
+                    {
+                        "run_id": run["run_id"],
+                        "case_id": result["case_id"],
+                        "category": result["category"],
+                        "prompt": result["prompt"],
+                        "variant": bool(result.get("variant")),
+                        "passed": result.get("passed"),
+                        "result_status": result.get("result_status", "unknown"),
+                        "case_score": result.get("case_score"),
+                        "response_text": result.get("response_text", ""),
+                        "notes": result.get("notes", ""),
+                        "meta": result.get("meta", {}),
+                    }
+                )
+            if cases:
+                _supabase_request("POST", SUPABASE_CASES_TABLE, json_body=cases, prefer="return=minimal")
+            return
+        except Exception as exc:
+            _warn_supabase_failure("save_run", exc)
+    _sqlite_save_run(run)
+
+
+def _sqlite_save_configured_target(target_payload: Dict):
     now = int(time.time())
     connection = conn()
     existing = connection.execute("SELECT 1 FROM configured_targets WHERE id = ?", (target_payload["id"],)).fetchone()
@@ -174,17 +286,45 @@ def save_configured_target(target_payload: Dict):
     return bool(existing)
 
 
+# Configured targets are stored separately from bootstrap JSON so the app can ship with
+# known-good examples while still letting a user onboard new targets from the UI.
+def save_configured_target(target_payload: Dict):
+    if supabase_enabled():
+        try:
+            existing = _supabase_request("GET", SUPABASE_TARGETS_TABLE, params={"select": "id", "id": f"eq.{target_payload['id']}", "limit": 1}) or []
+            now = int(time.time())
+            _supabase_request(
+                "POST",
+                SUPABASE_TARGETS_TABLE,
+                json_body={
+                    "id": target_payload["id"],
+                    "payload": target_payload,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            return bool(existing)
+        except Exception as exc:
+            _warn_supabase_failure("save_configured_target", exc)
+    return _sqlite_save_configured_target(target_payload)
+
+
 def list_configured_targets() -> List[Dict]:
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request("GET", SUPABASE_TARGETS_TABLE, params={"select": "payload", "order": "updated_at.desc"}) or []
+            return [row["payload"] for row in rows]
+        except Exception as exc:
+            _warn_supabase_failure("list_configured_targets", exc)
     connection = conn()
     rows = connection.execute("SELECT payload FROM configured_targets ORDER BY updated_at DESC").fetchall()
     connection.close()
     return [json.loads(row["payload"]) for row in rows]
 
 
-# Test plans are stored separately from family templates so users can review, regenerate,
-# and approve target-specific plans without mutating the shipped defaults.
-def save_test_plan(plan_payload: Dict):
+def _sqlite_save_test_plan(plan_payload: Dict):
     now = int(time.time())
     connection = conn()
     connection.execute(
@@ -204,8 +344,44 @@ def save_test_plan(plan_payload: Dict):
     connection.close()
 
 
+# Test plans are stored separately from family templates so users can review, regenerate,
+# and approve target-specific plans without mutating the shipped defaults.
+def save_test_plan(plan_payload: Dict):
+    if supabase_enabled():
+        try:
+            now = int(time.time())
+            _supabase_request(
+                "POST",
+                SUPABASE_PLANS_TABLE,
+                json_body={
+                    "plan_id": plan_payload["plan_id"],
+                    "target_id": plan_payload["target_id"],
+                    "mode": plan_payload["mode"],
+                    "source": plan_payload["source"],
+                    "approved": bool(plan_payload.get("approved", True)),
+                    "created_at": plan_payload.get("created_at", now),
+                    "updated_at": now,
+                    "payload": plan_payload,
+                },
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            return
+        except Exception as exc:
+            _warn_supabase_failure("save_test_plan", exc)
+    _sqlite_save_test_plan(plan_payload)
+
+
 def list_test_plans(target_id: Optional[str] = None) -> List[Dict]:
     init_db()
+    if supabase_enabled():
+        try:
+            params = {"select": "payload", "order": "updated_at.desc"}
+            if target_id:
+                params["target_id"] = f"eq.{target_id}"
+            rows = _supabase_request("GET", SUPABASE_PLANS_TABLE, params=params) or []
+            return [row["payload"] for row in rows]
+        except Exception as exc:
+            _warn_supabase_failure("list_test_plans", exc)
     connection = conn()
     if target_id:
         rows = connection.execute("SELECT payload FROM test_plans WHERE target_id = ? ORDER BY updated_at DESC", (target_id,)).fetchall()
@@ -217,6 +393,23 @@ def list_test_plans(target_id: Optional[str] = None) -> List[Dict]:
 
 def get_active_test_plan(target_id: str, mode: str) -> Optional[Dict]:
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request(
+                "GET",
+                SUPABASE_PLANS_TABLE,
+                params={
+                    "select": "payload",
+                    "target_id": f"eq.{target_id}",
+                    "mode": f"eq.{mode}",
+                    "approved": "eq.true",
+                    "order": "updated_at.desc",
+                    "limit": 1,
+                },
+            ) or []
+            return rows[0]["payload"] if rows else None
+        except Exception as exc:
+            _warn_supabase_failure("get_active_test_plan", exc)
     connection = conn()
     row = connection.execute(
         "SELECT payload FROM test_plans WHERE target_id = ? AND mode = ? AND approved = 1 ORDER BY updated_at DESC LIMIT 1",
@@ -242,9 +435,7 @@ def latest_plan_summaries() -> Dict[str, Dict]:
     return summaries
 
 
-# Probe summaries capture lightweight target-profile evidence without overwriting the full
-# run history. This keeps optional probe-assisted planning separate from benchmark results.
-def save_probe_summary(target_id: str, payload: Dict):
+def _sqlite_save_probe_summary(target_id: str, payload: Dict):
     now = int(time.time())
     connection = conn()
     connection.execute(
@@ -255,8 +446,37 @@ def save_probe_summary(target_id: str, payload: Dict):
     connection.close()
 
 
+# Probe summaries capture lightweight target-profile evidence without overwriting the full
+# run history. This keeps optional probe-assisted planning separate from benchmark results.
+def save_probe_summary(target_id: str, payload: Dict):
+    if supabase_enabled():
+        try:
+            now = int(time.time())
+            _supabase_request(
+                "POST",
+                SUPABASE_PROBES_TABLE,
+                json_body={
+                    "target_id": target_id,
+                    "payload": payload,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            return
+        except Exception as exc:
+            _warn_supabase_failure("save_probe_summary", exc)
+    _sqlite_save_probe_summary(target_id, payload)
+
+
 def get_probe_summary(target_id: str) -> Optional[Dict]:
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request("GET", SUPABASE_PROBES_TABLE, params={"select": "payload", "target_id": f"eq.{target_id}", "limit": 1}) or []
+            return rows[0]["payload"] if rows else None
+        except Exception as exc:
+            _warn_supabase_failure("get_probe_summary", exc)
     connection = conn()
     row = connection.execute("SELECT payload FROM target_probes WHERE target_id = ?", (target_id,)).fetchone()
     connection.close()
@@ -265,6 +485,12 @@ def get_probe_summary(target_id: str) -> Optional[Dict]:
 
 def latest_runs():
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request("GET", SUPABASE_RUNS_TABLE, params={"select": "*", "order": "created_at.desc", "limit": 40}) or []
+            return [_decode_run_row(row) for row in rows]
+        except Exception as exc:
+            _warn_supabase_failure("latest_runs", exc)
     connection = conn()
     rows = connection.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT 40").fetchall()
     connection.close()
@@ -280,6 +506,17 @@ def latest_run_snapshots_by_target() -> Dict[str, Dict]:
 
 def get_run_record(run_id: str) -> Optional[Dict]:
     init_db()
+    if supabase_enabled():
+        try:
+            rows = _supabase_request("GET", SUPABASE_RUNS_TABLE, params={"select": "*", "run_id": f"eq.{run_id}", "limit": 1}) or []
+            if not rows:
+                return None
+            case_rows = _supabase_request("GET", SUPABASE_CASES_TABLE, params={"select": "*", "run_id": f"eq.{run_id}", "order": "created_at.asc"}) if False else _supabase_request("GET", SUPABASE_CASES_TABLE, params={"select": "*", "run_id": f"eq.{run_id}"}) or []
+            run = _decode_run_row(rows[0])
+            run["results"] = [_decode_case_row(case) for case in case_rows]
+            return run
+        except Exception as exc:
+            _warn_supabase_failure("get_run_record", exc)
     connection = conn()
     row = connection.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
     if not row:
@@ -292,19 +529,38 @@ def get_run_record(run_id: str) -> Optional[Dict]:
     return run
 
 
+def _decode_json_field(value, default):
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return default
+    return default
+
+
 def _decode_run_row(row):
     data = dict(row)
-    data["target_profile"] = json.loads(data.get("target_profile") or "{}")
-    data["target_spec"] = json.loads(data.get("target_spec") or "{}")
-    data["run_meta"] = json.loads(data.get("run_meta") or "{}")
-    data["category_scores"] = json.loads(data.get("category_scores") or "{}")
-    data["logs"] = json.loads(data.get("logs") or "[]")
+    data["target_profile"] = _decode_json_field(data.get("target_profile"), {})
+    data["target_spec"] = _decode_json_field(data.get("target_spec"), {})
+    data["run_meta"] = _decode_json_field(data.get("run_meta"), {})
+    data["category_scores"] = _decode_json_field(data.get("category_scores"), {})
+    data["logs"] = _decode_json_field(data.get("logs"), [])
     return data
 
 
 def _decode_case_row(row):
     data = dict(row)
-    data["passed"] = None if data.get("passed") is None else bool(data["passed"])
+    passed = data.get("passed")
+    if passed is None:
+        data["passed"] = None
+    elif isinstance(passed, bool):
+        data["passed"] = passed
+    else:
+        data["passed"] = bool(passed)
     data["variant"] = bool(data.get("variant"))
-    data["meta"] = json.loads(data.get("meta") or "{}")
+    data["meta"] = _decode_json_field(data.get("meta"), {})
     return data
