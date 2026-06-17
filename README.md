@@ -13,13 +13,35 @@ This is a working MVP and recruiter-facing demo, not a full enterprise platform.
 
 ## Live Demo
 - Live demo: [CrashLab on Render](https://crashlab.onrender.com)
+- Video walkthrough: [Watch the Loom demo](https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446)
+
+[![CrashLab Loom Demo](docs/assets/loom-preview.png)](https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446)
 
 ### Screenshots
-![Dashboard](docs/assets/dashboard.png)
-![Suite Preview](docs/assets/suite-preview.png)
-![Add Custom Target](docs/assets/custom-target.png)
-![Live Run](docs/assets/live-run.png)
-![Report Export](docs/assets/report-export.png)
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/assets/suite-preview.png"><img src="docs/assets/suite-preview.png" alt="CrashLab suite preview" width="100%"/></a><br/>
+      <strong>Suite Preview</strong>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/assets/custom-target.png"><img src="docs/assets/custom-target.png" alt="CrashLab add target form" width="100%"/></a><br/>
+      <strong>Add Target</strong>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/assets/live-run.png"><img src="docs/assets/live-run.png" alt="CrashLab live run log" width="100%"/></a><br/>
+      <strong>Live Run</strong>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/assets/report-export.png"><img src="docs/assets/report-export.png" alt="CrashLab export and recent runs" width="100%"/></a><br/>
+      <strong>Report Export</strong>
+    </td>
+  </tr>
+</table>
+
+The Loom preview above already covers the main dashboard view, so the supporting screenshots focus on suite preview, target onboarding, live execution, and export evidence without repeating the same hero view.
 
 ## What Problem It Solves
 LLM workflows are easy to demo and difficult to test repeatably. A handful of manual prompts does not reliably answer:

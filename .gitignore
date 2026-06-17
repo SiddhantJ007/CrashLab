@@ -48,6 +48,11 @@ crashlab-run-*.md
 *.jpeg
 *.heic
 *.gif
+!docs/assets/
+!docs/assets/*.png
+!docs/assets/*.jpg
+!docs/assets/*.jpeg
+!docs/assets/*.gif
 
 # OS and editor files
 .DS_Store
