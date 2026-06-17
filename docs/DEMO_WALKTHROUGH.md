@@ -8,6 +8,7 @@ CrashLab is a target-aware AI workflow evaluation platform. Instead of manually 
 ## Suggested Demo Steps
 1. Open the live dashboard.
    - Live URL: `https://crashlab.onrender.com`
+   - Loom walkthrough: `https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446`
 2. Show the two built-in public target types.
    - Flowise
    - Dify
@@ -30,8 +31,31 @@ CrashLab is a target-aware AI workflow evaluation platform. Instead of manually 
 - CrashLab does not assume one scoring rubric fits every workflow family.
 - Supabase persistence keeps the public Render demo from losing run history after restarts.
 
-## Suggested Screenshots To Add Later
-- `[Insert dashboard screenshot]`
-- `[Insert suite preview screenshot]`
-- `[Insert live run log screenshot]`
-- `[Insert export/report screenshot]`
+## Demo Media
+[![CrashLab Loom Demo](assets/loom-preview.png)](https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446)
+
+The Loom recording is the primary walkthrough asset. It already shows the main dashboard, so the supporting screenshots focus on deeper product interactions rather than duplicating the same hero view.
+
+## Supporting Screenshots
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/suite-preview.png"><img src="assets/suite-preview.png" alt="CrashLab suite preview" width="100%"/></a><br/>
+      <strong>Suite Preview</strong>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/custom-target.png"><img src="assets/custom-target.png" alt="CrashLab add target form" width="100%"/></a><br/>
+      <strong>Add Target</strong>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/live-run.png"><img src="assets/live-run.png" alt="CrashLab live run log" width="100%"/></a><br/>
+      <strong>Live Run</strong>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/report-export.png"><img src="assets/report-export.png" alt="CrashLab report export and recent runs" width="100%"/></a><br/>
+      <strong>Report Export</strong>
+    </td>
+  </tr>
+</table>
