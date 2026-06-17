@@ -13,7 +13,7 @@ This is a working MVP and recruiter-facing demo, not a full enterprise platform.
 
 ## Live Demo
 - Live demo: [CrashLab on Render](https://crashlab.onrender.com)
-- Video walkthrough: [Watch the Loom demo](https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446)
+- Video walkthrough: 
 
 [![CrashLab Loom Demo](docs/assets/loom-preview.png)](https://www.loom.com/share/1a6fc484dc93431f801e0e6d47d5a446)
 
